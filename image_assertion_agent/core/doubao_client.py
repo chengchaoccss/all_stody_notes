@@ -15,6 +15,7 @@ from PIL import Image
 from ..config import settings
 from ..models.schemas import AssertionResult, ObjectDetail
 from .logger import logger
+from .image_downloader import download_image, ImageDownloadError
 
 
 class RetryableError(Exception):
@@ -504,11 +505,75 @@ class DoubaoVisionClient:
         """
         对URL图片进行视觉断言（支持重试和置信度阈值）
 
+        会自动下载图片以检测分辨率，选择合适的对比模式。
+
         Args:
             image_url: 测试图片URL
             expectation: 用户的预期描述
             expect_image_url: 预期图片URL（可选，局部参考图）
             task_id: 任务ID（用于日志追踪）
+
+        Returns:
+            Tuple[AssertionResult, str]: (断言结果, 原始响应文本)
+        """
+        has_expect_image = expect_image_url is not None
+        same_resolution = False
+
+        # 下载图片以检测分辨率
+        try:
+            logger.info(f"下载测试图片: {image_url[:80]}...", task_id=task_id)
+            image_bytes, image_format = download_image(image_url, task_id)
+
+            expect_image_bytes = None
+            expect_image_format = "jpeg"
+
+            if has_expect_image:
+                logger.info(f"下载预期图片: {expect_image_url[:80]}...", task_id=task_id)
+                expect_image_bytes, expect_image_format = download_image(expect_image_url, task_id)
+                same_resolution = self._check_same_resolution(image_bytes, expect_image_bytes)
+                logger.info(
+                    f"分辨率检测完成: same_resolution={same_resolution}",
+                    task_id=task_id,
+                )
+
+            # 使用下载的图片进行断言（可以检测分辨率选择正确的对比模式）
+            return self.assert_image(
+                image_bytes=image_bytes,
+                expectation=expectation,
+                image_format=image_format,
+                expect_image_bytes=expect_image_bytes,
+                expect_image_format=expect_image_format,
+                task_id=task_id,
+            )
+
+        except ImageDownloadError as e:
+            # 如果下载失败，回退到直接使用URL（但无法检测分辨率）
+            logger.warning(
+                f"图片下载失败，回退到直接URL模式: {e}",
+                task_id=task_id,
+            )
+            return self._assert_image_url_direct(
+                image_url=image_url,
+                expectation=expectation,
+                expect_image_url=expect_image_url,
+                task_id=task_id,
+            )
+
+    def _assert_image_url_direct(
+        self,
+        image_url: str,
+        expectation: str,
+        expect_image_url: Optional[str] = None,
+        task_id: Optional[str] = None,
+    ) -> Tuple[AssertionResult, str]:
+        """
+        直接使用URL进行图片断言（不下载，无法检测分辨率）
+
+        Args:
+            image_url: 测试图片URL
+            expectation: 用户的预期描述
+            expect_image_url: 预期图片URL
+            task_id: 任务ID
 
         Returns:
             Tuple[AssertionResult, str]: (断言结果, 原始响应文本)

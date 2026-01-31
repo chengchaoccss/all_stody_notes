@@ -11,3 +11,10 @@ pydantic>=2.5.0
 
 # HTTP客户端
 httpx>=0.25.0
+
+# 图像处理
+Pillow>=10.0.0
+
+# 测试依赖
+pytest>=7.0.0
+pytest-asyncio>=0.21.0

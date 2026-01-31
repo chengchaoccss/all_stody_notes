@@ -179,7 +179,8 @@ image_assertion_agent/
 │   ├── doubao_client.py     # 豆包API客户端（带重试机制）
 │   ├── task_manager.py      # 异步任务管理器（集成持久化）
 │   ├── database.py          # SQLite持久化存储模块
-│   └── logger.py            # 日志记录模块（JSON格式）
+│   ├── logger.py            # 日志记录模块（JSON格式）
+│   └── image_downloader.py  # URL图片下载模块（支持多格式）
 │
 ├── models/
 │   ├── __init__.py
@@ -202,7 +203,8 @@ image_assertion_agent/
 │
 └── tests/
     ├── __init__.py
-    └── test_api.py          # API测试用例
+    ├── test_api.py          # API测试用例
+    └── test_mock_api.py     # Mock测试（30个测试用例）
 ```
 
 ---
@@ -571,6 +573,51 @@ flowchart TB
 |------|--------|------|
 | `CONFIDENCE_THRESHOLD` | 0.7 | 置信度阈值 (0.0-1.0) |
 | `LOW_CONFIDENCE_RETRY` | true | 是否启用低置信度重试 |
+
+### 3.11 URL图片下载机制
+
+```mermaid
+flowchart TB
+    A[接收图片URL] --> B[发起HTTP GET请求]
+    B --> C{请求成功?}
+    C -->|否| D[抛出 ImageDownloadError]
+    C -->|是| E[检查Content-Length]
+
+    E --> F{大小 <= 10MB?}
+    F -->|否| D
+    F -->|是| G[检测图片格式]
+
+    G --> H{从Content-Type检测}
+    H -->|成功| L[返回图片数据和格式]
+    H -->|失败| I{从URL扩展名检测}
+    I -->|成功| L
+    I -->|失败| J{从图片内容检测}
+    J -->|成功| L
+    J -->|失败| K[默认使用JPEG格式]
+    K --> L
+
+    style A fill:#6366f1,color:#fff
+    style L fill:#10b981,color:#fff
+    style D fill:#ef4444,color:#fff
+```
+
+**支持的图片格式**
+
+| 格式 | MIME类型 | 文件扩展名 |
+|------|----------|------------|
+| JPEG | image/jpeg | .jpg, .jpeg |
+| PNG | image/png | .png |
+| GIF | image/gif | .gif |
+| WebP | image/webp | .webp |
+| BMP | image/bmp | .bmp |
+| TIFF | image/tiff | .tiff, .tif |
+
+**URL断言流程优化**
+
+当使用URL进行图片断言时，系统会：
+1. 自动下载图片以检测分辨率
+2. 根据分辨率选择正确的对比模式（相似度/局部匹配）
+3. 如果下载失败，回退到直接URL模式（无法检测分辨率）
 
 ---
 
@@ -1315,12 +1362,41 @@ async function pollResult(taskId) {
 - [FastAPI官方文档](https://fastapi.tiangolo.com/)
 - [Pydantic官方文档](https://docs.pydantic.dev/)
 
+### D. 测试覆盖
+
+项目包含完整的Mock测试套件，共30个测试用例：
+
+| 测试类 | 测试数量 | 覆盖范围 |
+|--------|----------|----------|
+| TestImageDownloader | 5 | 图片下载、格式检测 |
+| TestDoubaoClient | 7 | API调用、响应解析、分辨率检测 |
+| TestTaskManager | 3 | 任务创建、状态更新、任务列表 |
+| TestSchemas | 2 | 数据模型、JSON序列化 |
+| TestAPIEndpoints | 7 | REST API端点 |
+| TestRetryMechanism | 2 | 重试延迟计算、错误重试 |
+| TestIntegration | 2 | URL工作流、异步工作流 |
+| TestDualImageComparison | 2 | 相似度/局部匹配模式 |
+
+**运行测试**
+```bash
+# 运行所有测试
+python -m pytest image_assertion_agent/tests/test_mock_api.py -v
+
+# 运行特定测试类
+python -m pytest image_assertion_agent/tests/test_mock_api.py::TestDoubaoClient -v
+```
+
 ---
 
-*文档版本: v1.2.0 | 最后更新: 2024年*
+*文档版本: v1.3.0 | 最后更新: 2024年*
 
 **更新日志**
 
+- v1.3.0: 新增URL图片下载支持和完整Mock测试
+  - 新增 `image_downloader.py` 模块，支持多格式图片下载
+  - URL断言自动下载图片以检测分辨率，智能选择对比模式
+  - 新增30个Mock测试用例，覆盖所有核心模块
+  - 测试框架支持：pytest + unittest.mock
 - v1.2.0: 新增可靠性增强功能
   - API调用指数退避重试机制（3次重试，延迟2s/4s/8s）
   - SQLite持久化存储（任务、结果、API调用日志）
