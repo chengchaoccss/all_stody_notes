@@ -1067,6 +1067,13 @@
 
                 // Image match results
                 if (r.image_match !== null && r.image_match !== undefined) {
+                    // Show comparison mode
+                    const modeText = r.comparison_mode === 'similarity' ? '整体相似度对比' : '局部图匹配';
+                    detailRows += `
+                        <div class="result-row">
+                            <span class="result-label">对比模式</span>
+                            <span class="result-value" style="color: var(--cyan);">${modeText}</span>
+                        </div>`;
                     detailRows += `
                         <div class="result-row">
                             <span class="result-label">图片匹配</span>
@@ -1077,14 +1084,14 @@
                     if (r.image_similarity !== null) {
                         detailRows += `
                             <div class="result-row">
-                                <span class="result-label">相似度</span>
+                                <span class="result-label">${r.comparison_mode === 'similarity' ? '整体相似度' : '匹配相似度'}</span>
                                 <span class="result-value">${(r.image_similarity * 100).toFixed(1)}%</span>
                             </div>`;
                     }
                     if (r.match_location) {
                         detailRows += `
                             <div class="result-row">
-                                <span class="result-label">匹配位置</span>
+                                <span class="result-label">${r.comparison_mode === 'similarity' ? '差异区域' : '匹配位置'}</span>
                                 <span class="result-value">${r.match_location}</span>
                             </div>`;
                     }

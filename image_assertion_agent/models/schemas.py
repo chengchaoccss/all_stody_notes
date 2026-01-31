@@ -54,6 +54,10 @@ class AssertionResult(BaseModel):
     match_location: Optional[str] = Field(
         default=None, description="预期图片在测试图中的位置描述"
     )
+    comparison_mode: Optional[str] = Field(
+        default=None,
+        description="对比模式: 'similarity'(相同分辨率整体相似度对比), 'partial'(局部图匹配), None(仅文字断言)"
+    )
     reason: str = Field(..., description="判断理由的详细说明")
 
     class Config:

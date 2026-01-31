@@ -3,10 +3,12 @@
 使用OpenAI兼容接口调用豆包视觉大模型
 """
 import base64
+import io
 import json
-from typing import Optional
+from typing import Optional, Tuple
 
 from openai import OpenAI
+from PIL import Image
 
 from ..config import settings
 from ..models.schemas import AssertionResult, ObjectDetail
@@ -30,9 +32,69 @@ class DoubaoVisionClient:
             base_url=self.api_base,
         )
 
-    def _build_system_prompt(self, has_expect_image: bool = False) -> str:
+    def _get_image_resolution(self, image_bytes: bytes) -> Tuple[int, int]:
+        """获取图片分辨率"""
+        try:
+            image = Image.open(io.BytesIO(image_bytes))
+            return image.size  # (width, height)
+        except Exception:
+            return (0, 0)
+
+    def _check_same_resolution(
+        self, image_bytes: bytes, expect_image_bytes: bytes
+    ) -> bool:
+        """检查两张图片分辨率是否一致"""
+        size1 = self._get_image_resolution(image_bytes)
+        size2 = self._get_image_resolution(expect_image_bytes)
+        return size1 == size2 and size1 != (0, 0)
+
+    def _build_system_prompt(
+        self, has_expect_image: bool = False, same_resolution: bool = False
+    ) -> str:
         """构建系统提示词"""
-        if has_expect_image:
+        if has_expect_image and same_resolution:
+            # 分辨率相同：整体相似度对比模式
+            return """你是一个专业的图像视觉分析助手，专门用于对比两张图片的相似度。
+
+你的任务是：
+1. 用户会提供两张分辨率相同的图片：第一张是【测试图片】，第二张是【预期图片】
+2. 对比两张图片的整体相似度，判断它们是否是相同或相似的图片
+3. 如果用户还提供了文字描述，也要一并验证
+4. 必须以严格的JSON格式返回分析结果
+
+返回的JSON格式必须严格遵循以下schema：
+{
+    "assertion_passed": boolean,  // 断言是否通过（两张图片是否足够相似）
+    "confidence": float,  // 置信度，0.0-1.0之间
+    "expected_description": string,  // 用户的预期描述（如果有的话）
+    "actual_description": string,  // 两张图片的差异描述
+    "object_match": boolean,  // 两张图片中的主要物体是否相同
+    "quantity_match": boolean,  // 物体数量是否相同
+    "image_match": boolean,  // 两张图片是否匹配（相似度>0.8视为匹配）
+    "image_similarity": float,  // 两张图片的整体相似度，0.0-1.0（完全相同为1.0）
+    "match_location": string,  // 填写"整体对比"，如有差异区域可以描述
+    "expected_quantity": int or null,  // 预期图片中的物体数量
+    "actual_quantity": int or null,  // 测试图片中的物体数量
+    "detected_objects": [  // 两张图片中检测到的主要物品对比
+        {
+            "name": string,  // 物品名称
+            "quantity": int,  // 数量
+            "confidence": float,  // 检测置信度
+            "description": string  // 在两张图中的差异描述
+        }
+    ],
+    "reason": string  // 详细说明两张图片的相似和差异之处
+}
+
+注意事项：
+- 这是整体相似度对比模式，不是局部匹配
+- 关注两张图片在内容、颜色、布局、细节上的相似程度
+- 完全相同的图片相似度为1.0
+- 主体相同但有细微差异（如光照、角度）相似度在0.7-0.95之间
+- 内容完全不同的图片相似度低于0.3
+- 只返回JSON，不要有任何其他文字说明"""
+        elif has_expect_image:
+            # 分辨率不同：局部匹配模式
             return """你是一个专业的图像视觉分析助手，专门用于验证图片内容是否符合用户的预期。
 
 你的任务是：
@@ -106,9 +168,33 @@ class DoubaoVisionClient:
 - 仔细计数图片中的物品数量
 - 只返回JSON，不要有任何其他文字说明"""
 
-    def _build_user_prompt(self, expectation: str, has_expect_image: bool = False) -> str:
+    def _build_user_prompt(
+        self, expectation: str, has_expect_image: bool = False, same_resolution: bool = False
+    ) -> str:
         """构建用户提示词"""
-        if has_expect_image:
+        if has_expect_image and same_resolution:
+            # 分辨率相同：整体相似度对比模式
+            if expectation:
+                return f"""请对比这两张分辨率相同的图片：
+- 第一张是【测试图片】
+- 第二张是【预期图片】
+
+这是整体相似度对比任务，请判断两张图片的整体相似程度。
+
+同时还需要验证以下文字预期：
+{expectation}
+
+请严格按照JSON格式返回分析结果。"""
+            else:
+                return """请对比这两张分辨率相同的图片：
+- 第一张是【测试图片】
+- 第二张是【预期图片】
+
+这是整体相似度对比任务，请判断两张图片的整体相似程度，分析它们是否是相同或相似的图片。
+
+请严格按照JSON格式返回分析结果。"""
+        elif has_expect_image:
+            # 分辨率不同：局部匹配模式
             if expectation:
                 return f"""请分析这两张图片：
 - 第一张是【测试图片】（需要验证的图片）
@@ -136,7 +222,11 @@ class DoubaoVisionClient:
         return base64.b64encode(image_bytes).decode("utf-8")
 
     def _parse_response(
-        self, response_text: str, expectation: str, has_expect_image: bool = False
+        self,
+        response_text: str,
+        expectation: str,
+        has_expect_image: bool = False,
+        same_resolution: bool = False,
     ) -> AssertionResult:
         """解析API响应"""
         # 尝试提取JSON部分
@@ -167,6 +257,11 @@ class DoubaoVisionClient:
                     )
                 )
 
+            # 确定对比模式
+            comparison_mode = None
+            if has_expect_image:
+                comparison_mode = "similarity" if same_resolution else "partial"
+
             return AssertionResult(
                 assertion_passed=data.get("assertion_passed", False),
                 confidence=data.get("confidence", 0.0),
@@ -177,6 +272,7 @@ class DoubaoVisionClient:
                 image_match=data.get("image_match") if has_expect_image else None,
                 image_similarity=data.get("image_similarity") if has_expect_image else None,
                 match_location=data.get("match_location") if has_expect_image else None,
+                comparison_mode=comparison_mode,
                 expected_quantity=data.get("expected_quantity"),
                 actual_quantity=data.get("actual_quantity"),
                 detected_objects=detected_objects,
@@ -184,6 +280,10 @@ class DoubaoVisionClient:
             )
         except json.JSONDecodeError as e:
             # 解析失败时返回错误结果
+            comparison_mode = None
+            if has_expect_image:
+                comparison_mode = "similarity" if same_resolution else "partial"
+
             return AssertionResult(
                 assertion_passed=False,
                 confidence=0.0,
@@ -193,6 +293,7 @@ class DoubaoVisionClient:
                 quantity_match=False,
                 image_match=False if has_expect_image else None,
                 image_similarity=0.0 if has_expect_image else None,
+                comparison_mode=comparison_mode,
                 expected_quantity=None,
                 actual_quantity=None,
                 detected_objects=[],
@@ -221,6 +322,11 @@ class DoubaoVisionClient:
             AssertionResult: 断言结果
         """
         has_expect_image = expect_image_bytes is not None
+        same_resolution = False
+
+        # 检测分辨率是否一致
+        if has_expect_image:
+            same_resolution = self._check_same_resolution(image_bytes, expect_image_bytes)
 
         # 将测试图片编码为base64
         image_base64 = self._encode_image_to_base64(image_bytes)
@@ -247,14 +353,14 @@ class DoubaoVisionClient:
                 }
             )
 
-        # 添加文本提示
+        # 添加文本提示（根据分辨率选择不同prompt）
         content.append(
-            {"type": "text", "text": self._build_user_prompt(expectation, has_expect_image)}
+            {"type": "text", "text": self._build_user_prompt(expectation, has_expect_image, same_resolution)}
         )
 
-        # 构建消息
+        # 构建消息（根据分辨率选择不同system prompt）
         messages = [
-            {"role": "system", "content": self._build_system_prompt(has_expect_image)},
+            {"role": "system", "content": self._build_system_prompt(has_expect_image, same_resolution)},
             {"role": "user", "content": content},
         ]
 
@@ -268,7 +374,7 @@ class DoubaoVisionClient:
 
         # 解析响应
         response_text = response.choices[0].message.content
-        return self._parse_response(response_text, expectation, has_expect_image)
+        return self._parse_response(response_text, expectation, has_expect_image, same_resolution)
 
     def assert_image_url(
         self,
