@@ -28,12 +28,18 @@ class AssertionTask:
         image_data: Optional[str] = None,  # base64或URL
         image_type: str = "base64",  # base64 或 url
         image_format: str = "jpeg",
+        expect_image_data: Optional[str] = None,  # 预期图片 base64或URL
+        expect_image_type: Optional[str] = None,  # 预期图片类型
+        expect_image_format: str = "jpeg",
     ):
         self.task_id = task_id
         self.expectation = expectation
         self.image_data = image_data
         self.image_type = image_type
         self.image_format = image_format
+        self.expect_image_data = expect_image_data
+        self.expect_image_type = expect_image_type
+        self.expect_image_format = expect_image_format
         self.status = TaskStatus.PENDING
         self.result: Optional[AssertionResult] = None
         self.error: Optional[str] = None
@@ -47,6 +53,8 @@ class AssertionTask:
             "expectation": self.expectation,
             "image_data": self.image_data,
             "image_type": self.image_type,
+            "expect_image_data": self.expect_image_data,
+            "expect_image_type": self.expect_image_type,
             "status": self.status.value,
             "result": self.result.model_dump() if self.result else None,
             "error": self.error,
@@ -68,6 +76,9 @@ class TaskManager:
         image_data: Optional[str] = None,
         image_type: str = "base64",
         image_format: str = "jpeg",
+        expect_image_data: Optional[str] = None,
+        expect_image_type: Optional[str] = None,
+        expect_image_format: str = "jpeg",
     ) -> AssertionTask:
         """创建新任务"""
         task_id = str(uuid.uuid4())
@@ -77,6 +88,9 @@ class TaskManager:
             image_data=image_data,
             image_type=image_type,
             image_format=image_format,
+            expect_image_data=expect_image_data,
+            expect_image_type=expect_image_type,
+            expect_image_format=expect_image_format,
         )
         with self._lock:
             self._tasks[task_id] = task

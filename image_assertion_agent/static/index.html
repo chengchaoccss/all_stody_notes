@@ -17,6 +17,7 @@
             --success: #10b981;
             --danger: #ef4444;
             --warning: #f59e0b;
+            --cyan: #06b6d4;
             --bg-dark: #0f172a;
             --bg-card: #1e293b;
             --bg-card-hover: #334155;
@@ -65,7 +66,7 @@
         /* Main Layout */
         .main-layout {
             display: grid;
-            grid-template-columns: 400px 1fr;
+            grid-template-columns: 450px 1fr;
             gap: 30px;
         }
 
@@ -86,7 +87,7 @@
             top: 20px;
         }
 
-        .upload-panel h2 {
+        .panel-title {
             font-size: 1.25rem;
             margin-bottom: 20px;
             display: flex;
@@ -94,7 +95,7 @@
             gap: 10px;
         }
 
-        .upload-panel h2::before {
+        .panel-title::before {
             content: '';
             width: 4px;
             height: 24px;
@@ -102,15 +103,38 @@
             border-radius: 2px;
         }
 
+        /* Section */
+        .section {
+            margin-bottom: 20px;
+        }
+
+        .section-label {
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .section-label .required {
+            color: var(--danger);
+        }
+
+        .section-label .optional {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            opacity: 0.7;
+        }
+
         /* Drop Zone */
         .drop-zone {
             border: 2px dashed var(--border);
             border-radius: 12px;
-            padding: 40px 20px;
+            padding: 30px 15px;
             text-align: center;
             cursor: pointer;
             transition: all 0.3s ease;
-            margin-bottom: 20px;
             background: rgba(99, 102, 241, 0.05);
         }
 
@@ -119,14 +143,24 @@
             background: rgba(99, 102, 241, 0.1);
         }
 
+        .drop-zone.expect {
+            background: rgba(6, 182, 212, 0.05);
+        }
+
+        .drop-zone.expect:hover, .drop-zone.expect.drag-over {
+            border-color: var(--cyan);
+            background: rgba(6, 182, 212, 0.1);
+        }
+
         .drop-zone-icon {
-            font-size: 48px;
-            margin-bottom: 10px;
+            font-size: 36px;
+            margin-bottom: 8px;
         }
 
         .drop-zone p {
             color: var(--text-secondary);
-            margin-bottom: 5px;
+            font-size: 0.9rem;
+            margin-bottom: 3px;
         }
 
         .drop-zone .browse-btn {
@@ -135,19 +169,26 @@
             text-decoration: underline;
         }
 
+        .drop-zone.expect .browse-btn {
+            color: var(--cyan);
+        }
+
         /* Preview */
         .preview-container {
             display: none;
-            margin-bottom: 20px;
         }
 
         .preview-container.active {
             display: block;
         }
 
+        .preview-wrapper {
+            position: relative;
+        }
+
         .preview-image {
             width: 100%;
-            max-height: 250px;
+            max-height: 200px;
             object-fit: contain;
             border-radius: 12px;
             border: 1px solid var(--border);
@@ -157,30 +198,52 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-top: 10px;
-            padding: 10px;
+            margin-top: 8px;
+            padding: 8px 10px;
             background: rgba(0,0,0,0.2);
             border-radius: 8px;
         }
 
         .preview-info span {
             color: var(--text-secondary);
-            font-size: 0.9rem;
+            font-size: 0.85rem;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            max-width: 200px;
         }
 
         .remove-btn {
             background: var(--danger);
             color: white;
             border: none;
-            padding: 5px 12px;
+            padding: 4px 10px;
             border-radius: 6px;
             cursor: pointer;
-            font-size: 0.85rem;
+            font-size: 0.8rem;
             transition: opacity 0.2s;
+            flex-shrink: 0;
         }
 
         .remove-btn:hover {
             opacity: 0.8;
+        }
+
+        /* Two Column Images */
+        .images-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+        }
+
+        @media (max-width: 500px) {
+            .images-row {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .image-col {
+            min-width: 0;
         }
 
         /* Form */
@@ -193,18 +256,19 @@
             margin-bottom: 8px;
             font-weight: 500;
             color: var(--text-secondary);
+            font-size: 0.9rem;
         }
 
         .form-group textarea {
             width: 100%;
-            padding: 14px;
+            padding: 12px;
             border: 1px solid var(--border);
             border-radius: 10px;
             background: var(--bg-dark);
             color: var(--text-primary);
-            font-size: 1rem;
+            font-size: 0.95rem;
             resize: vertical;
-            min-height: 100px;
+            min-height: 80px;
             transition: border-color 0.2s;
         }
 
@@ -217,15 +281,22 @@
             color: var(--text-secondary);
         }
 
+        .form-hint {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            margin-top: 6px;
+            opacity: 0.8;
+        }
+
         /* Submit Button */
         .submit-btn {
             width: 100%;
-            padding: 16px;
+            padding: 14px;
             background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
             color: white;
             border: none;
             border-radius: 10px;
-            font-size: 1.1rem;
+            font-size: 1rem;
             font-weight: 600;
             cursor: pointer;
             transition: transform 0.2s, box-shadow 0.2s;
@@ -316,7 +387,7 @@
             display: flex;
             align-items: center;
             justify-content: space-between;
-            padding: 16px;
+            padding: 14px 16px;
             background: rgba(0,0,0,0.2);
             border-bottom: 1px solid var(--border);
         }
@@ -360,29 +431,41 @@
         }
 
         .task-body {
-            display: grid;
-            grid-template-columns: 120px 1fr;
-            gap: 16px;
             padding: 16px;
         }
 
-        @media (max-width: 600px) {
-            .task-body {
-                grid-template-columns: 1fr;
-            }
+        .task-images {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 14px;
+        }
+
+        .task-image-wrapper {
+            text-align: center;
+        }
+
+        .task-image-label {
+            font-size: 0.7rem;
+            color: var(--text-secondary);
+            margin-bottom: 4px;
+            text-transform: uppercase;
         }
 
         .task-image {
-            width: 120px;
-            height: 120px;
+            width: 100px;
+            height: 100px;
             object-fit: cover;
             border-radius: 8px;
             border: 1px solid var(--border);
         }
 
+        .task-image.expect {
+            border-color: var(--cyan);
+        }
+
         .task-image-placeholder {
-            width: 120px;
-            height: 120px;
+            width: 100px;
+            height: 100px;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -390,7 +473,7 @@
             border-radius: 8px;
             border: 1px solid var(--border);
             color: var(--text-secondary);
-            font-size: 0.8rem;
+            font-size: 0.75rem;
         }
 
         .task-content {
@@ -401,13 +484,18 @@
 
         .task-expectation {
             background: rgba(99, 102, 241, 0.1);
-            padding: 12px;
+            padding: 10px 12px;
             border-radius: 8px;
             border-left: 3px solid var(--primary);
         }
 
+        .task-expectation.image-expect {
+            border-left-color: var(--cyan);
+            background: rgba(6, 182, 212, 0.1);
+        }
+
         .task-expectation-label {
-            font-size: 0.75rem;
+            font-size: 0.7rem;
             color: var(--text-secondary);
             text-transform: uppercase;
             letter-spacing: 0.5px;
@@ -415,7 +503,7 @@
         }
 
         .task-expectation-text {
-            font-size: 0.95rem;
+            font-size: 0.9rem;
         }
 
         /* Result Area */
@@ -468,14 +556,14 @@
 
         .result-details {
             display: grid;
-            gap: 8px;
+            gap: 6px;
         }
 
         .result-row {
             display: flex;
             justify-content: space-between;
-            font-size: 0.9rem;
-            padding: 6px 0;
+            font-size: 0.85rem;
+            padding: 5px 0;
             border-bottom: 1px solid var(--border);
         }
 
@@ -500,20 +588,20 @@
         }
 
         .result-reason {
-            margin-top: 12px;
-            padding: 12px;
+            margin-top: 10px;
+            padding: 10px;
             background: rgba(99, 102, 241, 0.1);
             border-radius: 8px;
-            font-size: 0.9rem;
+            font-size: 0.85rem;
             line-height: 1.5;
         }
 
         .result-reason-label {
-            font-size: 0.75rem;
+            font-size: 0.7rem;
             color: var(--text-secondary);
             text-transform: uppercase;
             letter-spacing: 0.5px;
-            margin-bottom: 6px;
+            margin-bottom: 4px;
         }
 
         .error-message {
@@ -542,7 +630,7 @@
         }
 
         /* Hidden file input */
-        #fileInput {
+        .hidden-input {
             display: none;
         }
 
@@ -586,30 +674,64 @@
         <div class="main-layout">
             <!-- Upload Panel -->
             <aside class="upload-panel">
-                <h2>新建断言</h2>
+                <h2 class="panel-title">新建断言</h2>
 
-                <input type="file" id="fileInput" accept="image/*">
+                <input type="file" id="testFileInput" class="hidden-input" accept="image/*">
+                <input type="file" id="expectFileInput" class="hidden-input" accept="image/*">
 
-                <div class="drop-zone" id="dropZone">
-                    <div class="drop-zone-icon">📷</div>
-                    <p>拖拽图片到这里</p>
-                    <p>或 <span class="browse-btn" onclick="document.getElementById('fileInput').click()">浏览文件</span></p>
-                </div>
+                <div class="images-row">
+                    <!-- Test Image -->
+                    <div class="image-col">
+                        <div class="section-label">
+                            <span>测试图片</span>
+                            <span class="required">*</span>
+                        </div>
+                        <div class="drop-zone" id="testDropZone">
+                            <div class="drop-zone-icon">📷</div>
+                            <p>拖拽图片</p>
+                            <p><span class="browse-btn">浏览</span></p>
+                        </div>
+                        <div class="preview-container" id="testPreviewContainer">
+                            <div class="preview-wrapper">
+                                <img id="testPreviewImage" class="preview-image" src="" alt="测试图片">
+                            </div>
+                            <div class="preview-info">
+                                <span id="testFileInfo"></span>
+                                <button class="remove-btn" onclick="removeTestImage()">移除</button>
+                            </div>
+                        </div>
+                    </div>
 
-                <div class="preview-container" id="previewContainer">
-                    <img id="previewImage" class="preview-image" src="" alt="预览">
-                    <div class="preview-info">
-                        <span id="fileInfo"></span>
-                        <button class="remove-btn" onclick="removeImage()">移除</button>
+                    <!-- Expect Image -->
+                    <div class="image-col">
+                        <div class="section-label">
+                            <span>预期图片</span>
+                            <span class="optional">(可选)</span>
+                        </div>
+                        <div class="drop-zone expect" id="expectDropZone">
+                            <div class="drop-zone-icon">🎯</div>
+                            <p>局部/参考图</p>
+                            <p><span class="browse-btn">浏览</span></p>
+                        </div>
+                        <div class="preview-container" id="expectPreviewContainer">
+                            <div class="preview-wrapper">
+                                <img id="expectPreviewImage" class="preview-image" src="" alt="预期图片">
+                            </div>
+                            <div class="preview-info">
+                                <span id="expectFileInfo"></span>
+                                <button class="remove-btn" onclick="removeExpectImage()">移除</button>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
                 <div class="form-group">
-                    <label for="expectation">预期描述</label>
+                    <label for="expectation">预期描述 <span style="color: var(--text-secondary); font-weight: normal; font-size: 0.85rem;">(可选)</span></label>
                     <textarea
                         id="expectation"
                         placeholder="例如：这张图里面有一双运动鞋&#10;或：图片中有3个红色的苹果"
                     ></textarea>
+                    <div class="form-hint">提示：至少需要提供预期图片或文字描述之一</div>
                 </div>
 
                 <button class="submit-btn" id="submitBtn" onclick="submitAssertion()" disabled>
@@ -629,7 +751,7 @@
                     <div class="empty-state" id="emptyState">
                         <div class="empty-state-icon">📋</div>
                         <p>暂无断言记录</p>
-                        <p style="font-size: 0.9rem; margin-top: 8px;">上传图片并输入预期开始第一次断言</p>
+                        <p style="font-size: 0.9rem; margin-top: 8px;">上传图片开始第一次断言</p>
                     </div>
                 </div>
             </main>
@@ -640,15 +762,21 @@
 
     <script>
         // State
-        let selectedFile = null;
+        let testFile = null;
+        let expectFile = null;
         let pollingTasks = new Set();
 
         // Elements
-        const dropZone = document.getElementById('dropZone');
-        const fileInput = document.getElementById('fileInput');
-        const previewContainer = document.getElementById('previewContainer');
-        const previewImage = document.getElementById('previewImage');
-        const fileInfo = document.getElementById('fileInfo');
+        const testDropZone = document.getElementById('testDropZone');
+        const expectDropZone = document.getElementById('expectDropZone');
+        const testFileInput = document.getElementById('testFileInput');
+        const expectFileInput = document.getElementById('expectFileInput');
+        const testPreviewContainer = document.getElementById('testPreviewContainer');
+        const expectPreviewContainer = document.getElementById('expectPreviewContainer');
+        const testPreviewImage = document.getElementById('testPreviewImage');
+        const expectPreviewImage = document.getElementById('expectPreviewImage');
+        const testFileInfo = document.getElementById('testFileInfo');
+        const expectFileInfo = document.getElementById('expectFileInfo');
         const expectationInput = document.getElementById('expectation');
         const submitBtn = document.getElementById('submitBtn');
         const taskList = document.getElementById('taskList');
@@ -658,14 +786,15 @@
         init();
 
         function init() {
-            setupDropZone();
-            setupFileInput();
-            setupExpectationInput();
+            setupDropZone(testDropZone, testFileInput, handleTestFile);
+            setupDropZone(expectDropZone, expectFileInput, handleExpectFile);
+            setupFileInput(testFileInput, handleTestFile);
+            setupFileInput(expectFileInput, handleExpectFile);
+            expectationInput.addEventListener('input', updateSubmitButton);
             loadTasks();
         }
 
-        // Drop Zone
-        function setupDropZone() {
+        function setupDropZone(dropZone, fileInput, handler) {
             dropZone.addEventListener('dragover', (e) => {
                 e.preventDefault();
                 dropZone.classList.add('drag-over');
@@ -680,7 +809,7 @@
                 dropZone.classList.remove('drag-over');
                 const files = e.dataTransfer.files;
                 if (files.length > 0 && files[0].type.startsWith('image/')) {
-                    handleFile(files[0]);
+                    handler(files[0]);
                 }
             });
 
@@ -689,67 +818,95 @@
             });
         }
 
-        function setupFileInput() {
-            fileInput.addEventListener('change', (e) => {
+        function setupFileInput(input, handler) {
+            input.addEventListener('change', (e) => {
                 if (e.target.files.length > 0) {
-                    handleFile(e.target.files[0]);
+                    handler(e.target.files[0]);
                 }
             });
         }
 
-        function setupExpectationInput() {
-            expectationInput.addEventListener('input', updateSubmitButton);
+        function handleTestFile(file) {
+            if (!validateFile(file)) return;
+            testFile = file;
+            showPreview(file, testPreviewImage, testFileInfo, testDropZone, testPreviewContainer);
+            updateSubmitButton();
         }
 
-        function handleFile(file) {
+        function handleExpectFile(file) {
+            if (!validateFile(file)) return;
+            expectFile = file;
+            showPreview(file, expectPreviewImage, expectFileInfo, expectDropZone, expectPreviewContainer);
+            updateSubmitButton();
+        }
+
+        function validateFile(file) {
             if (!file.type.startsWith('image/')) {
                 showToast('请选择图片文件', 'error');
-                return;
+                return false;
             }
-
             if (file.size > 10 * 1024 * 1024) {
                 showToast('图片大小不能超过10MB', 'error');
-                return;
+                return false;
             }
+            return true;
+        }
 
-            selectedFile = file;
-
+        function showPreview(file, imageEl, infoEl, dropZone, container) {
             const reader = new FileReader();
             reader.onload = (e) => {
-                previewImage.src = e.target.result;
-                fileInfo.textContent = `${file.name} (${formatFileSize(file.size)})`;
+                imageEl.src = e.target.result;
+                infoEl.textContent = `${file.name} (${formatFileSize(file.size)})`;
                 dropZone.style.display = 'none';
-                previewContainer.classList.add('active');
-                updateSubmitButton();
+                container.classList.add('active');
             };
             reader.readAsDataURL(file);
         }
 
-        function removeImage() {
-            selectedFile = null;
-            fileInput.value = '';
-            previewContainer.classList.remove('active');
-            dropZone.style.display = 'block';
+        function removeTestImage() {
+            testFile = null;
+            testFileInput.value = '';
+            testPreviewContainer.classList.remove('active');
+            testDropZone.style.display = 'block';
+            updateSubmitButton();
+        }
+
+        function removeExpectImage() {
+            expectFile = null;
+            expectFileInput.value = '';
+            expectPreviewContainer.classList.remove('active');
+            expectDropZone.style.display = 'block';
             updateSubmitButton();
         }
 
         function updateSubmitButton() {
-            const hasImage = selectedFile !== null;
+            const hasTestImage = testFile !== null;
             const hasExpectation = expectationInput.value.trim().length > 0;
-            submitBtn.disabled = !(hasImage && hasExpectation);
+            const hasExpectImage = expectFile !== null;
+            // 需要测试图，且至少有预期描述或预期图片之一
+            submitBtn.disabled = !(hasTestImage && (hasExpectation || hasExpectImage));
         }
 
         // Submit
         async function submitAssertion() {
-            if (!selectedFile || !expectationInput.value.trim()) return;
+            if (!testFile) return;
+
+            const expectation = expectationInput.value.trim();
+            if (!expectation && !expectFile) {
+                showToast('请提供预期描述或预期图片', 'error');
+                return;
+            }
 
             submitBtn.disabled = true;
             submitBtn.innerHTML = '<span class="spinner"></span><span>提交中...</span>';
 
             try {
                 const formData = new FormData();
-                formData.append('image', selectedFile);
-                formData.append('expectation', expectationInput.value.trim());
+                formData.append('image', testFile);
+                formData.append('expectation', expectation);
+                if (expectFile) {
+                    formData.append('expect_image', expectFile);
+                }
 
                 const response = await fetch('/assert/async/upload', {
                     method: 'POST',
@@ -765,7 +922,8 @@
                 showToast('断言任务已提交', 'success');
 
                 // Reset form
-                removeImage();
+                removeTestImage();
+                removeExpectImage();
                 expectationInput.value = '';
 
                 // Add to list and start polling
@@ -789,7 +947,6 @@
                     const data = await response.json();
                     renderTasks(data.tasks);
 
-                    // Start polling for pending/processing tasks
                     data.tasks.forEach(task => {
                         if (task.status === 'pending' || task.status === 'processing') {
                             startPolling(task.task_id);
@@ -808,8 +965,6 @@
             }
 
             emptyState.style.display = 'none';
-
-            // Sort by created_at descending
             tasks.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
             taskList.innerHTML = '';
@@ -840,11 +995,42 @@
                 'failed': '失败'
             };
 
-            const imageHTML = task.image_type === 'url'
-                ? `<img class="task-image" src="${task.image_data}" alt="图片" onerror="this.outerHTML='<div class=\\'task-image-placeholder\\'>URL图片</div>'">`
+            // Test image
+            const testImageHTML = task.image_type === 'url'
+                ? `<img class="task-image" src="${task.image_data}" alt="测试图">`
                 : task.image_data
-                    ? `<img class="task-image" src="data:image/jpeg;base64,${task.image_data}" alt="图片">`
-                    : `<div class="task-image-placeholder">无预览</div>`;
+                    ? `<img class="task-image" src="data:image/jpeg;base64,${task.image_data}" alt="测试图">`
+                    : `<div class="task-image-placeholder">无图片</div>`;
+
+            // Expect image
+            let expectImageHTML = '';
+            if (task.expect_image_data) {
+                expectImageHTML = task.expect_image_type === 'url'
+                    ? `<div class="task-image-wrapper">
+                         <div class="task-image-label">预期图</div>
+                         <img class="task-image expect" src="${task.expect_image_data}" alt="预期图">
+                       </div>`
+                    : `<div class="task-image-wrapper">
+                         <div class="task-image-label">预期图</div>
+                         <img class="task-image expect" src="data:image/jpeg;base64,${task.expect_image_data}" alt="预期图">
+                       </div>`;
+            }
+
+            // Expectation text
+            let expectationHTML = '';
+            if (task.expectation) {
+                expectationHTML = `
+                    <div class="task-expectation">
+                        <div class="task-expectation-label">文字预期</div>
+                        <div class="task-expectation-text">${escapeHTML(task.expectation)}</div>
+                    </div>`;
+            } else if (task.expect_image_data) {
+                expectationHTML = `
+                    <div class="task-expectation image-expect">
+                        <div class="task-expectation-label">图片预期</div>
+                        <div class="task-expectation-text">在测试图中查找预期图片中的内容</div>
+                    </div>`;
+            }
 
             let resultHTML = '';
             if (task.status === 'pending' || task.status === 'processing') {
@@ -852,52 +1038,77 @@
                     <div class="result-loading">
                         <div class="spinner"></div>
                         <span>AI分析中，请稍候...</span>
-                    </div>
-                `;
+                    </div>`;
             } else if (task.status === 'failed') {
                 resultHTML = `
                     <div class="error-message">
                         ${task.error || '分析失败，请重试'}
-                    </div>
-                `;
+                    </div>`;
             } else if (task.result) {
                 const r = task.result;
+                let detailRows = `
+                    <div class="result-row">
+                        <span class="result-label">置信度</span>
+                        <span class="result-value">${(r.confidence * 100).toFixed(1)}%</span>
+                    </div>
+                    <div class="result-row">
+                        <span class="result-label">物品匹配</span>
+                        <span class="result-value ${r.object_match ? 'match' : 'no-match'}">
+                            ${r.object_match ? '✓ 匹配' : '✗ 不匹配'}
+                        </span>
+                    </div>
+                    <div class="result-row">
+                        <span class="result-label">数量匹配</span>
+                        <span class="result-value ${r.quantity_match ? 'match' : 'no-match'}">
+                            ${r.quantity_match ? '✓ 匹配' : '✗ 不匹配'}
+                            ${r.expected_quantity !== null ? ` (预期: ${r.expected_quantity}, 实际: ${r.actual_quantity || 0})` : ''}
+                        </span>
+                    </div>`;
+
+                // Image match results
+                if (r.image_match !== null && r.image_match !== undefined) {
+                    detailRows += `
+                        <div class="result-row">
+                            <span class="result-label">图片匹配</span>
+                            <span class="result-value ${r.image_match ? 'match' : 'no-match'}">
+                                ${r.image_match ? '✓ 找到匹配' : '✗ 未找到'}
+                            </span>
+                        </div>`;
+                    if (r.image_similarity !== null) {
+                        detailRows += `
+                            <div class="result-row">
+                                <span class="result-label">相似度</span>
+                                <span class="result-value">${(r.image_similarity * 100).toFixed(1)}%</span>
+                            </div>`;
+                    }
+                    if (r.match_location) {
+                        detailRows += `
+                            <div class="result-row">
+                                <span class="result-label">匹配位置</span>
+                                <span class="result-value">${r.match_location}</span>
+                            </div>`;
+                    }
+                }
+
                 resultHTML = `
                     <div class="result-badge ${r.assertion_passed ? 'passed' : 'failed'}">
                         ${r.assertion_passed ? '✓ 断言通过' : '✗ 断言失败'}
                     </div>
                     <div class="result-details">
-                        <div class="result-row">
-                            <span class="result-label">置信度</span>
-                            <span class="result-value">${(r.confidence * 100).toFixed(1)}%</span>
-                        </div>
-                        <div class="result-row">
-                            <span class="result-label">物品匹配</span>
-                            <span class="result-value ${r.object_match ? 'match' : 'no-match'}">
-                                ${r.object_match ? '✓ 匹配' : '✗ 不匹配'}
-                            </span>
-                        </div>
-                        <div class="result-row">
-                            <span class="result-label">数量匹配</span>
-                            <span class="result-value ${r.quantity_match ? 'match' : 'no-match'}">
-                                ${r.quantity_match ? '✓ 匹配' : '✗ 不匹配'}
-                                ${r.expected_quantity !== null ? ` (预期: ${r.expected_quantity}, 实际: ${r.actual_quantity || 0})` : ''}
-                            </span>
-                        </div>
+                        ${detailRows}
                     </div>
                     ${r.actual_description ? `
                         <div class="result-reason">
                             <div class="result-reason-label">实际内容</div>
-                            ${r.actual_description}
+                            ${escapeHTML(r.actual_description)}
                         </div>
                     ` : ''}
                     ${r.reason ? `
                         <div class="result-reason">
                             <div class="result-reason-label">分析理由</div>
-                            ${r.reason}
+                            ${escapeHTML(r.reason)}
                         </div>
-                    ` : ''}
-                `;
+                    ` : ''}`;
             }
 
             return `
@@ -906,18 +1117,20 @@
                     <span class="task-status ${task.status}">${statusText[task.status]}</span>
                 </div>
                 <div class="task-body">
-                    ${imageHTML}
-                    <div class="task-content">
-                        <div class="task-expectation">
-                            <div class="task-expectation-label">预期</div>
-                            <div class="task-expectation-text">${escapeHTML(task.expectation)}</div>
+                    <div class="task-images">
+                        <div class="task-image-wrapper">
+                            <div class="task-image-label">测试图</div>
+                            ${testImageHTML}
                         </div>
+                        ${expectImageHTML}
+                    </div>
+                    <div class="task-content">
+                        ${expectationHTML}
                         <div class="task-result">
                             ${resultHTML}
                         </div>
                     </div>
-                </div>
-            `;
+                </div>`;
         }
 
         function updateTaskCard(task) {
@@ -952,7 +1165,6 @@
                 console.error('Polling error:', error);
             }
 
-            // Continue polling
             setTimeout(() => pollTask(taskId), 2000);
         }
 
@@ -999,6 +1211,7 @@
         }
 
         function escapeHTML(str) {
+            if (!str) return '';
             const div = document.createElement('div');
             div.textContent = str;
             return div.innerHTML;

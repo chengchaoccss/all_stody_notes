@@ -36,6 +36,12 @@ class AssertionResult(BaseModel):
     actual_description: str = Field(..., description="图片中实际看到的内容描述")
     object_match: bool = Field(..., description="物品类型是否匹配")
     quantity_match: bool = Field(..., description="数量是否匹配")
+    image_match: Optional[bool] = Field(
+        default=None, description="预期图片是否在测试图中找到匹配（仅当提供预期图片时）"
+    )
+    image_similarity: Optional[float] = Field(
+        default=None, ge=0.0, le=1.0, description="预期图片与测试图的匹配相似度"
+    )
     expected_quantity: Optional[int] = Field(
         default=None, description="预期数量（如果用户指定了）"
     )
@@ -44,6 +50,9 @@ class AssertionResult(BaseModel):
     )
     detected_objects: List[ObjectDetail] = Field(
         default_factory=list, description="检测到的物品列表"
+    )
+    match_location: Optional[str] = Field(
+        default=None, description="预期图片在测试图中的位置描述"
     )
     reason: str = Field(..., description="判断理由的详细说明")
 
@@ -74,12 +83,18 @@ class AssertionResult(BaseModel):
 class AssertionRequest(BaseModel):
     """断言请求（通过base64上传图片）"""
 
-    image_base64: str = Field(..., description="图片的Base64编码")
+    image_base64: str = Field(..., description="测试图片的Base64编码")
     expectation: str = Field(
-        ..., min_length=1, description="预期描述，如'这张图里面有一双运动鞋'"
+        default="", description="预期描述，如'这张图里面有一双运动鞋'（可选，如果提供了预期图片）"
+    )
+    expect_image_base64: Optional[str] = Field(
+        default=None, description="预期图片的Base64编码（局部图，用于在测试图中查找匹配）"
+    )
+    expect_image_format: str = Field(
+        default="jpeg", description="预期图片格式"
     )
     image_format: str = Field(
-        default="jpeg", description="图片格式，如 jpeg, png, webp"
+        default="jpeg", description="测试图片格式，如 jpeg, png, webp"
     )
 
     class Config:
@@ -87,6 +102,7 @@ class AssertionRequest(BaseModel):
             "example": {
                 "image_base64": "/9j/4AAQSkZJRg...",
                 "expectation": "这张图里面有一双运动鞋",
+                "expect_image_base64": "/9j/4AAQSkZJRg...(局部鞋子图片)",
                 "image_format": "jpeg",
             }
         }
@@ -95,16 +111,20 @@ class AssertionRequest(BaseModel):
 class AssertionURLRequest(BaseModel):
     """断言请求（通过URL）"""
 
-    image_url: str = Field(..., description="图片URL地址")
+    image_url: str = Field(..., description="测试图片URL地址")
     expectation: str = Field(
-        ..., min_length=1, description="预期描述，如'这张图里面有一双运动鞋'"
+        default="", description="预期描述，如'这张图里面有一双运动鞋'（可选）"
+    )
+    expect_image_url: Optional[str] = Field(
+        default=None, description="预期图片URL（局部图，用于在测试图中查找匹配）"
     )
 
     class Config:
         json_schema_extra = {
             "example": {
-                "image_url": "https://example.com/shoes.jpg",
+                "image_url": "https://example.com/full_image.jpg",
                 "expectation": "这张图里面有一双运动鞋",
+                "expect_image_url": "https://example.com/shoe_partial.jpg",
             }
         }
 
@@ -123,8 +143,10 @@ class TaskResponse(BaseModel):
     task_id: str = Field(..., description="任务ID")
     status: str = Field(..., description="任务状态: pending, processing, completed, failed")
     expectation: str = Field(..., description="预期描述")
-    image_data: Optional[str] = Field(default=None, description="图片数据(base64或URL)")
+    image_data: Optional[str] = Field(default=None, description="测试图片数据(base64或URL)")
     image_type: str = Field(default="base64", description="图片类型: base64 或 url")
+    expect_image_data: Optional[str] = Field(default=None, description="预期图片数据(base64或URL)")
+    expect_image_type: Optional[str] = Field(default=None, description="预期图片类型")
     result: Optional[AssertionResult] = Field(default=None, description="断言结果")
     error: Optional[str] = Field(default=None, description="错误信息")
     created_at: str = Field(..., description="创建时间")
