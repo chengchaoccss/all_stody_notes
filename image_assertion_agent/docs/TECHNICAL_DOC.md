@@ -34,6 +34,10 @@
 - **结构化输出**: 返回标准JSON Schema格式的断言结果
 - **异步处理**: 支持异步任务处理，不阻塞前端
 - **可视化界面**: 提供美观的Web界面进行交互
+- **API重试机制**: 指数退避重试，提高服务稳定性
+- **持久化存储**: SQLite数据库持久化任务和结果
+- **完整日志追踪**: 支持请求追踪ID，JSON格式日志
+- **置信度阈值**: 可配置的置信度阈值，支持低置信度重试
 
 ### 1.3 技术栈
 
@@ -44,6 +48,8 @@
 | API协议 | OpenAI Compatible API |
 | 数据验证 | Pydantic v2 |
 | 图像处理 | Pillow (PIL) |
+| 持久化存储 | SQLite3 |
+| 日志系统 | Python logging + JSON格式 |
 | 前端 | HTML5 + CSS3 + Vanilla JavaScript |
 | 异步处理 | Python Threading |
 
@@ -63,7 +69,15 @@ graph TB
     subgraph Server["服务端层"]
         FastAPI["FastAPI 服务"]
         TaskManager["任务管理器"]
-        DoubaoClient["豆包API客户端"]
+        DoubaoClient["豆包API客户端<br/>(带重试机制)"]
+        Logger["日志记录器<br/>(JSON格式)"]
+        Database["SQLite数据库<br/>(持久化存储)"]
+    end
+
+    subgraph Storage["存储层"]
+        SQLite["assertions.db"]
+        ImageStore["images/"]
+        LogFiles["logs/"]
     end
 
     subgraph External["外部服务"]
@@ -75,11 +89,18 @@ graph TB
     FastAPI -->|"创建任务"| TaskManager
     FastAPI -->|"同步调用"| DoubaoClient
     TaskManager -->|"异步调用"| DoubaoClient
-    DoubaoClient -->|"OpenAI Compatible"| DoubaoAPI
+    TaskManager -->|"持久化"| Database
+    DoubaoClient -->|"重试+日志"| DoubaoAPI
+    DoubaoClient --> Logger
+    Database --> SQLite
+    Database --> ImageStore
+    Logger --> LogFiles
 
     style Web fill:#6366f1,color:#fff
     style FastAPI fill:#10b981,color:#fff
     style DoubaoAPI fill:#f59e0b,color:#fff
+    style Database fill:#8b5cf6,color:#fff
+    style Logger fill:#ec4899,color:#fff
 ```
 
 ### 2.2 组件架构图
@@ -92,8 +113,10 @@ graph LR
         end
 
         subgraph core["core 模块"]
-            doubao["doubao_client.py<br/>豆包API客户端"]
+            doubao["doubao_client.py<br/>豆包API客户端<br/>(带重试)"]
             task["task_manager.py<br/>任务管理器"]
+            database["database.py<br/>SQLite持久化"]
+            logger["logger.py<br/>日志记录器"]
         end
 
         subgraph models["models 模块"]
@@ -104,6 +127,15 @@ graph LR
             html["index.html<br/>前端页面"]
         end
 
+        subgraph data["data 目录"]
+            db["assertions.db"]
+            images["images/"]
+        end
+
+        subgraph logs["logs 目录"]
+            logfile["app.log<br/>(JSON格式)"]
+        end
+
         config["config.py<br/>配置管理"]
     end
 
@@ -111,13 +143,20 @@ graph LR
     main --> task
     main --> schemas
     main --> config
+    main --> logger
     task --> schemas
+    task --> database
+    task --> logger
     doubao --> schemas
     doubao --> config
+    doubao --> logger
+    database --> config
 
     style main fill:#6366f1,color:#fff
     style doubao fill:#10b981,color:#fff
     style task fill:#f59e0b,color:#fff
+    style database fill:#8b5cf6,color:#fff
+    style logger fill:#ec4899,color:#fff
 ```
 
 ### 2.3 目录结构
@@ -125,7 +164,7 @@ graph LR
 ```
 image_assertion_agent/
 ├── __init__.py              # 包初始化
-├── config.py                # 配置管理
+├── config.py                # 配置管理（含重试、日志、数据库配置）
 ├── run.py                   # 启动脚本
 ├── requirements.txt         # 依赖清单
 ├── .env.example             # 环境变量示例
@@ -137,8 +176,10 @@ image_assertion_agent/
 │
 ├── core/
 │   ├── __init__.py
-│   ├── doubao_client.py     # 豆包API客户端
-│   └── task_manager.py      # 异步任务管理器
+│   ├── doubao_client.py     # 豆包API客户端（带重试机制）
+│   ├── task_manager.py      # 异步任务管理器（集成持久化）
+│   ├── database.py          # SQLite持久化存储模块
+│   └── logger.py            # 日志记录模块（JSON格式）
 │
 ├── models/
 │   ├── __init__.py
@@ -146,6 +187,18 @@ image_assertion_agent/
 │
 ├── static/
 │   └── index.html           # 前端页面
+│
+├── data/                    # 数据存储目录（自动创建）
+│   ├── assertions.db        # SQLite数据库
+│   └── images/              # 图片存储（按日期分目录）
+│       └── 2024-01-15/
+│           └── abc123.jpg
+│
+├── logs/                    # 日志目录（自动创建）
+│   └── app.log              # JSON格式日志文件
+│
+├── docs/
+│   └── TECHNICAL_DOC.md     # 技术文档
 │
 └── tests/
     ├── __init__.py
@@ -316,6 +369,209 @@ flowchart TB
 - 返回匹配位置描述（如"左上角"、"中央"等）
 - 适合产品检测、元素定位等场景
 
+### 3.7 API重试机制
+
+```mermaid
+flowchart TB
+    A[发起API调用] --> B{调用成功?}
+    B -->|是| C[返回结果]
+    B -->|否| D{重试次数 < 最大重试?}
+    D -->|是| E[计算退避延迟]
+    E --> F["等待 delay = base × 2^(attempt-1)"]
+    F --> G[记录重试日志]
+    G --> A
+    D -->|否| H[抛出 RetryableError]
+
+    style A fill:#6366f1,color:#fff
+    style C fill:#10b981,color:#fff
+    style H fill:#ef4444,color:#fff
+```
+
+**重试配置参数**
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `API_MAX_RETRIES` | 3 | 最大重试次数 |
+| `API_RETRY_BASE_DELAY` | 2.0秒 | 基础延迟时间 |
+| `API_RETRY_MAX_DELAY` | 30.0秒 | 最大延迟时间 |
+| `API_TIMEOUT` | 60.0秒 | API调用超时时间 |
+
+**退避延迟计算**
+```python
+delay = min(base_delay × 2^(attempt-1), max_delay)
+# 示例：2s → 4s → 8s → 16s → ... → 30s (上限)
+```
+
+### 3.8 持久化存储架构
+
+```mermaid
+graph TB
+    subgraph Application["应用层"]
+        TM["TaskManager"]
+        DC["DoubaoClient"]
+    end
+
+    subgraph Database["数据库层 (database.py)"]
+        DBM["DatabaseManager<br/>(单例模式)"]
+
+        subgraph Tables["SQLite 表"]
+            T1["tasks<br/>任务表"]
+            T2["assertion_results<br/>断言结果表"]
+            T3["api_logs<br/>API调用日志表"]
+        end
+    end
+
+    subgraph FileSystem["文件系统"]
+        DB["data/assertions.db"]
+        IMG["data/images/<br/>按日期存储"]
+    end
+
+    TM --> DBM
+    DC --> DBM
+    DBM --> T1
+    DBM --> T2
+    DBM --> T3
+    T1 --> DB
+    T2 --> DB
+    T3 --> DB
+    DBM --> IMG
+
+    style DBM fill:#8b5cf6,color:#fff
+    style T1 fill:#6366f1,color:#fff
+    style T2 fill:#6366f1,color:#fff
+    style T3 fill:#6366f1,color:#fff
+```
+
+**数据库表结构**
+
+```sql
+-- 任务表
+CREATE TABLE tasks (
+    task_id TEXT PRIMARY KEY,
+    expectation TEXT,
+    image_path TEXT,           -- 图片文件路径
+    image_type TEXT,           -- base64/url
+    expect_image_path TEXT,    -- 预期图片路径
+    expect_image_type TEXT,
+    status TEXT DEFAULT 'pending',
+    error TEXT,
+    created_at TIMESTAMP,
+    completed_at TIMESTAMP,
+    duration_ms REAL
+);
+
+-- 断言结果表
+CREATE TABLE assertion_results (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_id TEXT REFERENCES tasks(task_id),
+    assertion_passed BOOLEAN,
+    confidence REAL,
+    comparison_mode TEXT,
+    raw_response TEXT,         -- 原始API响应
+    result_json TEXT,          -- 完整结果JSON
+    created_at TIMESTAMP
+);
+
+-- API调用日志表
+CREATE TABLE api_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_id TEXT,
+    request_type TEXT,         -- assert_image/assert_image_url
+    attempt_number INTEGER,
+    success BOOLEAN,
+    error_message TEXT,
+    response_time_ms REAL,
+    created_at TIMESTAMP
+);
+```
+
+### 3.9 日志追踪系统
+
+```mermaid
+flowchart LR
+    subgraph Request["请求处理"]
+        R1["生成 trace_id"]
+        R2["设置上下文"]
+    end
+
+    subgraph Logging["日志记录"]
+        L1["JSONFormatter<br/>(文件日志)"]
+        L2["ColoredFormatter<br/>(控制台)"]
+    end
+
+    subgraph Output["输出目标"]
+        O1["logs/app.log<br/>(JSON格式)"]
+        O2["终端<br/>(彩色输出)"]
+    end
+
+    R1 --> R2
+    R2 --> L1
+    R2 --> L2
+    L1 --> O1
+    L2 --> O2
+
+    style R1 fill:#6366f1,color:#fff
+    style L1 fill:#8b5cf6,color:#fff
+    style L2 fill:#ec4899,color:#fff
+```
+
+**日志格式示例**
+
+JSON文件日志 (`logs/app.log`):
+```json
+{
+  "timestamp": "2024-01-15T10:30:15.123456",
+  "level": "INFO",
+  "trace_id": "abc12345",
+  "task_id": "550e8400-e29b-41d4-a716-446655440000",
+  "message": "任务创建成功",
+  "extra": {
+    "expectation": "这张图里面有一双运动鞋",
+    "image_type": "base64"
+  }
+}
+```
+
+控制台彩色输出:
+```
+2024-01-15 10:30:15 [INFO] [abc12345] 任务创建成功 | task_id=550e8400...
+```
+
+**日志级别说明**
+
+| 级别 | 用途 | 颜色 |
+|------|------|------|
+| DEBUG | 调试信息 | 灰色 |
+| INFO | 正常操作 | 绿色 |
+| WARNING | 警告信息（如低置信度） | 黄色 |
+| ERROR | 错误信息 | 红色 |
+| CRITICAL | 严重错误 | 红色加粗 |
+
+### 3.10 置信度阈值机制
+
+```mermaid
+flowchart TB
+    A[获取断言结果] --> B{置信度 >= 阈值?}
+    B -->|是| C[直接返回结果]
+    B -->|否| D{启用低置信度重试?}
+    D -->|是| E{重试次数 < 最大次数?}
+    E -->|是| F[记录警告日志]
+    F --> G[重新调用API]
+    G --> A
+    E -->|否| H[返回最高置信度结果]
+    D -->|否| C
+
+    style C fill:#10b981,color:#fff
+    style H fill:#f59e0b,color:#fff
+```
+
+**配置参数**
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `CONFIDENCE_THRESHOLD` | 0.7 | 置信度阈值 (0.0-1.0) |
+| `LOW_CONFIDENCE_RETRY` | true | 是否启用低置信度重试 |
+
 ---
 
 ## 4. 数据模型
@@ -413,14 +669,51 @@ classDiagram
         -str api_base
         -str model_endpoint
         -OpenAI client
-        +assert_image()
-        +assert_image_url()
+        -int max_retries
+        -float retry_base_delay
+        -float confidence_threshold
+        +assert_image() Tuple~AssertionResult, str~
+        +assert_image_url() Tuple~AssertionResult, str~
         -_get_image_resolution()
         -_check_same_resolution()
         -_build_system_prompt()
         -_build_user_prompt()
         -_encode_image_to_base64()
         -_parse_response()
+        -_calculate_retry_delay()
+    }
+
+    class DatabaseManager {
+        -sqlite3.Connection conn
+        -Path db_path
+        -Path image_storage_path
+        +init_database()
+        +save_task()
+        +get_task()
+        +update_task_status()
+        +save_assertion_result()
+        +log_api_call()
+        +save_image()
+        +get_all_tasks()
+    }
+
+    class Logger {
+        -str log_level
+        -Path log_dir
+        -contextvars trace_id
+        +info()
+        +error()
+        +warning()
+        +debug()
+        +log_task_created()
+        +log_task_completed()
+        +log_doubao_call()
+        +log_api_request()
+    }
+
+    class RetryableError {
+        +str message
+        +int attempts
     }
 
     AssertionResult "1" *-- "*" ObjectDetail
@@ -428,7 +721,11 @@ classDiagram
     TaskListResponse "1" *-- "*" TaskResponse
     AssertionTask "1" o-- "0..1" AssertionResult
     TaskManager "1" *-- "*" AssertionTask
+    TaskManager --> DatabaseManager : uses
+    TaskManager --> Logger : uses
     DoubaoVisionClient ..> AssertionResult : creates
+    DoubaoVisionClient ..> RetryableError : throws
+    DoubaoVisionClient --> Logger : uses
 ```
 
 ### 4.2 断言结果 Schema
@@ -811,14 +1108,45 @@ cp .env.example .env
 
 ### 7.3 环境变量配置
 
-| 变量名 | 必填 | 说明 | 示例 |
-|--------|------|------|------|
-| `DOUBAO_API_KEY` | 是 | 豆包API密钥 | `ak-xxx` |
-| `DOUBAO_MODEL_ENDPOINT` | 是 | 模型端点ID | `ep-xxx` |
+**基础配置**
+
+| 变量名 | 必填 | 说明 | 默认值 |
+|--------|------|------|--------|
+| `DOUBAO_API_KEY` | 是 | 豆包API密钥 | - |
+| `DOUBAO_MODEL_ENDPOINT` | 是 | 模型端点ID | - |
 | `DOUBAO_API_BASE` | 否 | API基础URL | `https://ark.cn-beijing.volces.com/api/v3` |
 | `HOST` | 否 | 服务监听地址 | `0.0.0.0` |
 | `PORT` | 否 | 服务端口 | `8000` |
 | `DEBUG` | 否 | 调试模式 | `false` |
+
+**API重试配置**
+
+| 变量名 | 说明 | 默认值 |
+|--------|------|--------|
+| `API_MAX_RETRIES` | 最大重试次数 | `3` |
+| `API_RETRY_BASE_DELAY` | 基础延迟时间（秒） | `2.0` |
+| `API_RETRY_MAX_DELAY` | 最大延迟时间（秒） | `30.0` |
+| `API_TIMEOUT` | API调用超时时间（秒） | `60.0` |
+
+**置信度配置**
+
+| 变量名 | 说明 | 默认值 |
+|--------|------|--------|
+| `CONFIDENCE_THRESHOLD` | 置信度阈值 (0.0-1.0) | `0.7` |
+| `LOW_CONFIDENCE_RETRY` | 低置信度时是否重试 | `true` |
+
+**日志配置**
+
+| 变量名 | 说明 | 默认值 |
+|--------|------|--------|
+| `LOG_LEVEL` | 日志级别 (DEBUG/INFO/WARNING/ERROR) | `INFO` |
+| `LOG_DIR` | 日志目录路径 | `./logs` |
+
+**存储配置**
+
+| 变量名 | 说明 | 默认值 |
+|--------|------|--------|
+| `DATA_DIR` | 数据存储目录 | `./data` |
 
 ### 7.4 启动服务
 
@@ -962,7 +1290,15 @@ async function pollResult(taskId) {
 | 400 | 请求参数错误（无效图片、Base64解码失败等） |
 | 404 | 任务不存在 |
 | 500 | 服务器内部错误（AI调用失败等） |
+| 500 | 图像分析失败（重试已用尽）- RetryableError |
 | 503 | 服务未配置（缺少API密钥） |
+
+### A.1 内部错误类型
+
+| 错误类型 | 说明 | 处理方式 |
+|----------|------|----------|
+| `RetryableError` | API调用失败且重试次数已用尽 | 记录日志，返回500错误 |
+| `LowConfidenceWarning` | 置信度低于阈值 | 自动重试（如启用）或记录警告 |
 
 ### B. 性能指标
 
@@ -981,9 +1317,16 @@ async function pollResult(taskId) {
 
 ---
 
-*文档版本: v1.1.0 | 最后更新: 2024年*
+*文档版本: v1.2.0 | 最后更新: 2024年*
 
 **更新日志**
 
+- v1.2.0: 新增可靠性增强功能
+  - API调用指数退避重试机制（3次重试，延迟2s/4s/8s）
+  - SQLite持久化存储（任务、结果、API调用日志）
+  - 完整日志记录系统（JSON文件日志 + 彩色控制台输出）
+  - 请求追踪ID (trace_id) 贯穿整个请求生命周期
+  - 可配置置信度阈值，支持低置信度自动重试
+  - 新增 `database.py` 和 `logger.py` 核心模块
 - v1.1.0: 新增双图对比功能，支持预期图片上传和智能对比模式选择
 - v1.0.0: 初始版本，支持文字预期断言
