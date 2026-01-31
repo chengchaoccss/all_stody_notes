@@ -27,6 +27,10 @@
 
 - **图像内容识别**: 基于豆包视觉大模型分析图片内容
 - **预期断言验证**: 验证图片内容是否符合用户预期
+- **双图对比功能**: 支持上传测试图+预期图进行对比分析
+- **智能对比模式**: 根据图片分辨率自动选择对比模式
+  - **整体相似度对比**: 分辨率相同时，对比两张图片的整体相似度
+  - **局部图匹配**: 分辨率不同时，在测试图中查找预期图（局部图）
 - **结构化输出**: 返回标准JSON Schema格式的断言结果
 - **异步处理**: 支持异步任务处理，不阻塞前端
 - **可视化界面**: 提供美观的Web界面进行交互
@@ -39,6 +43,7 @@
 | AI模型 | 豆包视觉大模型 (Doubao Vision) |
 | API协议 | OpenAI Compatible API |
 | 数据验证 | Pydantic v2 |
+| 图像处理 | Pillow (PIL) |
 | 前端 | HTML5 + CSS3 + Vanilla JavaScript |
 | 异步处理 | Python Threading |
 
@@ -265,6 +270,52 @@ stateDiagram-v2
     end note
 ```
 
+### 3.5 图片对比模式选择流程
+
+```mermaid
+flowchart TB
+    A[接收图片] --> B{是否有预期图片?}
+    B -->|否| C[仅文字断言模式]
+    B -->|是| D[获取两张图片分辨率]
+
+    D --> E{分辨率是否相同?}
+
+    E -->|是| F[整体相似度对比模式<br/>comparison_mode: similarity]
+    E -->|否| G[局部图匹配模式<br/>comparison_mode: partial]
+
+    F --> H[使用相似度对比Prompt]
+    G --> I[使用局部匹配Prompt]
+    C --> J[使用文字断言Prompt]
+
+    H --> K[调用豆包API]
+    I --> K
+    J --> K
+
+    K --> L[解析响应并设置comparison_mode]
+
+    style F fill:#06b6d4,color:#fff
+    style G fill:#f59e0b,color:#fff
+    style C fill:#6366f1,color:#fff
+```
+
+### 3.6 对比模式详解
+
+| 模式 | 触发条件 | 用途 | comparison_mode |
+|------|----------|------|-----------------|
+| 文字断言 | 仅提供文字预期 | 验证图片内容是否符合文字描述 | `null` |
+| 整体相似度 | 提供预期图，且分辨率相同 | 判断两张图是否相同/相似 | `"similarity"` |
+| 局部图匹配 | 提供预期图，且分辨率不同 | 在测试图中查找局部图内容 | `"partial"` |
+
+**整体相似度对比模式**特点：
+- 用于判断两张图片是否是相同或相似的图片
+- 关注内容、颜色、布局、细节的整体相似程度
+- 相似度评分：完全相同=1.0，完全不同<0.3
+
+**局部图匹配模式**特点：
+- 用于在大图中查找小图（局部图）的内容
+- 返回匹配位置描述（如"左上角"、"中央"等）
+- 适合产品检测、元素定位等场景
+
 ---
 
 ## 4. 数据模型
@@ -287,6 +338,10 @@ classDiagram
         +str actual_description
         +bool object_match
         +bool quantity_match
+        +bool image_match
+        +float image_similarity
+        +str match_location
+        +str comparison_mode
         +int expected_quantity
         +int actual_quantity
         +List~ObjectDetail~ detected_objects
@@ -296,12 +351,15 @@ classDiagram
     class AssertionRequest {
         +str image_base64
         +str expectation
+        +str expect_image_base64
+        +str expect_image_format
         +str image_format
     }
 
     class AssertionURLRequest {
         +str image_url
         +str expectation
+        +str expect_image_url
     }
 
     class TaskResponse {
@@ -310,6 +368,8 @@ classDiagram
         +str expectation
         +str image_data
         +str image_type
+        +str expect_image_data
+        +str expect_image_type
         +AssertionResult result
         +str error
         +str created_at
@@ -327,6 +387,9 @@ classDiagram
         +str image_data
         +str image_type
         +str image_format
+        +str expect_image_data
+        +str expect_image_type
+        +str expect_image_format
         +TaskStatus status
         +AssertionResult result
         +str error
@@ -352,6 +415,8 @@ classDiagram
         -OpenAI client
         +assert_image()
         +assert_image_url()
+        -_get_image_resolution()
+        -_check_same_resolution()
         -_build_system_prompt()
         -_build_user_prompt()
         -_encode_image_to_base64()
@@ -368,6 +433,8 @@ classDiagram
 
 ### 4.2 断言结果 Schema
 
+**文字预期断言结果**
+
 ```json
 {
   "assertion_passed": true,
@@ -376,6 +443,10 @@ classDiagram
   "actual_description": "图片中可以看到一双白色的Nike运动鞋，放置在木地板上",
   "object_match": true,
   "quantity_match": true,
+  "image_match": null,
+  "image_similarity": null,
+  "match_location": null,
+  "comparison_mode": null,
   "expected_quantity": 2,
   "actual_quantity": 2,
   "detected_objects": [
@@ -390,6 +461,48 @@ classDiagram
 }
 ```
 
+**双图对比结果 - 整体相似度模式（分辨率相同）**
+
+```json
+{
+  "assertion_passed": true,
+  "confidence": 0.95,
+  "expected_description": "",
+  "actual_description": "两张图片内容基本一致，均为同一双白色运动鞋",
+  "object_match": true,
+  "quantity_match": true,
+  "image_match": true,
+  "image_similarity": 0.92,
+  "match_location": "整体对比",
+  "comparison_mode": "similarity",
+  "expected_quantity": 2,
+  "actual_quantity": 2,
+  "detected_objects": [...],
+  "reason": "两张图片分辨率相同，整体对比相似度为92%，主体内容一致"
+}
+```
+
+**双图对比结果 - 局部图匹配模式（分辨率不同）**
+
+```json
+{
+  "assertion_passed": true,
+  "confidence": 0.88,
+  "expected_description": "",
+  "actual_description": "在测试图的中央位置找到了与预期图相似的运动鞋",
+  "object_match": true,
+  "quantity_match": true,
+  "image_match": true,
+  "image_similarity": 0.85,
+  "match_location": "中央偏右",
+  "comparison_mode": "partial",
+  "expected_quantity": null,
+  "actual_quantity": 1,
+  "detected_objects": [...],
+  "reason": "在测试图中找到了与预期图（局部图）匹配的运动鞋，位于图片中央偏右位置"
+}
+```
+
 ### 4.3 任务状态枚举
 
 | 状态 | 值 | 描述 |
@@ -398,6 +511,25 @@ classDiagram
 | PROCESSING | `processing` | 正在调用AI分析 |
 | COMPLETED | `completed` | 分析完成，结果就绪 |
 | FAILED | `failed` | 处理失败，记录错误信息 |
+
+### 4.4 对比模式枚举
+
+| 模式 | 值 | 描述 |
+|------|-----|------|
+| 无 | `null` | 仅文字预期，无图片对比 |
+| 整体相似度 | `"similarity"` | 分辨率相同，整体相似度对比 |
+| 局部匹配 | `"partial"` | 分辨率不同，局部图匹配 |
+
+### 4.5 新增字段说明
+
+| 字段 | 类型 | 描述 |
+|------|------|------|
+| `image_match` | bool \| null | 图片是否匹配（仅双图对比时有值） |
+| `image_similarity` | float \| null | 图片相似度 0.0-1.0（仅双图对比时有值） |
+| `match_location` | string \| null | 匹配位置描述（局部匹配时为位置，整体对比时为"整体对比"） |
+| `comparison_mode` | string \| null | 对比模式："similarity"、"partial" 或 null |
+| `expect_image_data` | string \| null | 预期图片数据（base64或URL） |
+| `expect_image_type` | string \| null | 预期图片类型："base64"或"url" |
 
 ---
 
@@ -430,8 +562,11 @@ Content-Type: multipart/form-data
 
 | 参数 | 类型 | 必填 | 描述 |
 |------|------|------|------|
-| image | File | 是 | 图片文件 |
-| expectation | string | 是 | 预期描述 |
+| image | File | 是 | 测试图片文件 |
+| expectation | string | 否* | 文字预期描述 |
+| expect_image | File | 否* | 预期图片（局部图/参考图） |
+
+> *注：`expectation` 和 `expect_image` 至少需要提供一个
 
 **响应**
 
@@ -442,6 +577,8 @@ Content-Type: multipart/form-data
   "expectation": "这张图里面有一双运动鞋",
   "image_data": "base64...",
   "image_type": "base64",
+  "expect_image_data": "base64...",
+  "expect_image_type": "base64",
   "created_at": "2024-01-15T10:30:00"
 }
 ```
@@ -529,24 +666,48 @@ sequenceDiagram
 ```mermaid
 flowchart TB
     subgraph DoubaoVisionClient
-        A[接收图片和预期] --> B[编码图片为Base64]
-        B --> C[构建系统提示词]
-        C --> D[构建用户提示词]
-        D --> E[调用OpenAI兼容API]
-        E --> F[解析JSON响应]
-        F --> G[构建AssertionResult]
-        G --> H[返回结果]
+        A[接收测试图片] --> A1{有预期图片?}
+        A1 -->|是| B[检测两张图片分辨率]
+        A1 -->|否| C1[文字断言模式]
+        B --> B1{分辨率相同?}
+        B1 -->|是| C2[整体相似度模式]
+        B1 -->|否| C3[局部匹配模式]
+
+        C1 --> D[编码图片为Base64]
+        C2 --> D
+        C3 --> D
+
+        D --> E[根据模式构建系统提示词]
+        E --> F[根据模式构建用户提示词]
+        F --> G[调用OpenAI兼容API]
+        G --> H[解析JSON响应]
+        H --> I[设置comparison_mode]
+        I --> J[返回AssertionResult]
     end
 
-    subgraph 系统提示词
-        S1["角色定义: 图像分析助手"]
-        S2["输出格式: JSON Schema"]
-        S3["注意事项: 数量理解规则"]
+    subgraph 提示词策略
+        P1["文字断言: 验证内容描述"]
+        P2["相似度对比: 整体相似度分析"]
+        P3["局部匹配: 查找局部图位置"]
     end
 
-    C -.-> S1
-    C -.-> S2
-    C -.-> S3
+    C1 -.-> P1
+    C2 -.-> P2
+    C3 -.-> P3
+```
+
+**分辨率检测**
+
+使用PIL库检测图片分辨率：
+```python
+def _get_image_resolution(self, image_bytes: bytes) -> Tuple[int, int]:
+    image = Image.open(io.BytesIO(image_bytes))
+    return image.size  # (width, height)
+
+def _check_same_resolution(self, image_bytes, expect_image_bytes) -> bool:
+    size1 = self._get_image_resolution(image_bytes)
+    size2 = self._get_image_resolution(expect_image_bytes)
+    return size1 == size2 and size1 != (0, 0)
 ```
 
 **提示词工程**
@@ -556,6 +717,9 @@ flowchart TB
 2. 严格定义JSON输出格式
 3. 处理数量词理解（如"一双"="2"）
 4. 低温度(0.1)确保输出稳定性
+5. 根据对比模式选择不同的分析策略：
+   - **整体相似度模式**: 强调对比两张图的整体相似程度
+   - **局部匹配模式**: 强调在大图中查找小图内容及位置
 
 ### 6.2 任务管理器模块
 
@@ -726,15 +890,26 @@ else:
 ### 8.2 cURL调用
 
 ```bash
-# 同步断言
+# 同步断言（仅文字预期）
 curl -X POST "http://localhost:8000/assert/upload" \
   -F "image=@shoes.jpg" \
   -F "expectation=这张图里面有一双运动鞋"
 
-# 异步断言
+# 异步断言（仅文字预期）
 curl -X POST "http://localhost:8000/assert/async/upload" \
   -F "image=@shoes.jpg" \
   -F "expectation=这张图里面有一双运动鞋"
+
+# 双图对比（测试图 + 预期图）
+curl -X POST "http://localhost:8000/assert/async/upload" \
+  -F "image=@test_image.jpg" \
+  -F "expect_image=@expected_partial.jpg"
+
+# 双图对比 + 文字预期
+curl -X POST "http://localhost:8000/assert/async/upload" \
+  -F "image=@test_image.jpg" \
+  -F "expect_image=@expected_partial.jpg" \
+  -F "expectation=预期图中的鞋子应该出现在左侧"
 
 # 查询任务
 curl "http://localhost:8000/task/{task_id}"
@@ -806,4 +981,9 @@ async function pollResult(taskId) {
 
 ---
 
-*文档版本: v1.0.0 | 最后更新: 2024年*
+*文档版本: v1.1.0 | 最后更新: 2024年*
+
+**更新日志**
+
+- v1.1.0: 新增双图对比功能，支持预期图片上传和智能对比模式选择
+- v1.0.0: 初始版本，支持文字预期断言
