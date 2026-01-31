@@ -1,0 +1,809 @@
+# 图像视觉断言 Agent 技术文档
+
+> 基于豆包视觉大模型的智能图像内容验证服务
+
+---
+
+## 目录
+
+1. [项目概述](#1-项目概述)
+2. [系统架构](#2-系统架构)
+3. [核心流程](#3-核心流程)
+4. [数据模型](#4-数据模型)
+5. [API接口文档](#5-api接口文档)
+6. [模块设计](#6-模块设计)
+7. [部署指南](#7-部署指南)
+8. [使用示例](#8-使用示例)
+
+---
+
+## 1. 项目概述
+
+### 1.1 项目简介
+
+图像视觉断言 Agent 是一个基于豆包（Doubao）视觉大模型的智能图像内容验证服务。用户可以上传图片并描述预期内容，系统会自动分析图片并返回结构化的断言结果，包括物品匹配、数量匹配等详细信息。
+
+### 1.2 核心功能
+
+- **图像内容识别**: 基于豆包视觉大模型分析图片内容
+- **预期断言验证**: 验证图片内容是否符合用户预期
+- **结构化输出**: 返回标准JSON Schema格式的断言结果
+- **异步处理**: 支持异步任务处理，不阻塞前端
+- **可视化界面**: 提供美观的Web界面进行交互
+
+### 1.3 技术栈
+
+| 层级 | 技术选型 |
+|------|----------|
+| 后端框架 | FastAPI |
+| AI模型 | 豆包视觉大模型 (Doubao Vision) |
+| API协议 | OpenAI Compatible API |
+| 数据验证 | Pydantic v2 |
+| 前端 | HTML5 + CSS3 + Vanilla JavaScript |
+| 异步处理 | Python Threading |
+
+---
+
+## 2. 系统架构
+
+### 2.1 整体架构图
+
+```mermaid
+graph TB
+    subgraph Client["客户端层"]
+        Web["Web 前端"]
+        API_Client["API 客户端"]
+    end
+
+    subgraph Server["服务端层"]
+        FastAPI["FastAPI 服务"]
+        TaskManager["任务管理器"]
+        DoubaoClient["豆包API客户端"]
+    end
+
+    subgraph External["外部服务"]
+        DoubaoAPI["豆包视觉API<br/>(火山引擎)"]
+    end
+
+    Web -->|"HTTP/REST"| FastAPI
+    API_Client -->|"HTTP/REST"| FastAPI
+    FastAPI -->|"创建任务"| TaskManager
+    FastAPI -->|"同步调用"| DoubaoClient
+    TaskManager -->|"异步调用"| DoubaoClient
+    DoubaoClient -->|"OpenAI Compatible"| DoubaoAPI
+
+    style Web fill:#6366f1,color:#fff
+    style FastAPI fill:#10b981,color:#fff
+    style DoubaoAPI fill:#f59e0b,color:#fff
+```
+
+### 2.2 组件架构图
+
+```mermaid
+graph LR
+    subgraph image_assertion_agent["image_assertion_agent 包"]
+        subgraph api["api 模块"]
+            main["main.py<br/>FastAPI应用"]
+        end
+
+        subgraph core["core 模块"]
+            doubao["doubao_client.py<br/>豆包API客户端"]
+            task["task_manager.py<br/>任务管理器"]
+        end
+
+        subgraph models["models 模块"]
+            schemas["schemas.py<br/>数据模型"]
+        end
+
+        subgraph static["static 目录"]
+            html["index.html<br/>前端页面"]
+        end
+
+        config["config.py<br/>配置管理"]
+    end
+
+    main --> doubao
+    main --> task
+    main --> schemas
+    main --> config
+    task --> schemas
+    doubao --> schemas
+    doubao --> config
+
+    style main fill:#6366f1,color:#fff
+    style doubao fill:#10b981,color:#fff
+    style task fill:#f59e0b,color:#fff
+```
+
+### 2.3 目录结构
+
+```
+image_assertion_agent/
+├── __init__.py              # 包初始化
+├── config.py                # 配置管理
+├── run.py                   # 启动脚本
+├── requirements.txt         # 依赖清单
+├── .env.example             # 环境变量示例
+├── client_example.py        # Python客户端示例
+│
+├── api/
+│   ├── __init__.py
+│   └── main.py              # FastAPI 主应用
+│
+├── core/
+│   ├── __init__.py
+│   ├── doubao_client.py     # 豆包API客户端
+│   └── task_manager.py      # 异步任务管理器
+│
+├── models/
+│   ├── __init__.py
+│   └── schemas.py           # Pydantic 数据模型
+│
+├── static/
+│   └── index.html           # 前端页面
+│
+└── tests/
+    ├── __init__.py
+    └── test_api.py          # API测试用例
+```
+
+---
+
+## 3. 核心流程
+
+### 3.1 同步断言流程
+
+```mermaid
+sequenceDiagram
+    participant C as 客户端
+    participant F as FastAPI
+    participant D as DoubaoClient
+    participant A as 豆包API
+
+    C->>F: POST /assert/upload<br/>(图片 + 预期描述)
+    F->>F: 验证图片格式和大小
+    F->>D: assert_image(image_bytes, expectation)
+    D->>D: 编码图片为Base64
+    D->>D: 构建系统提示词
+    D->>A: chat.completions.create()
+    A-->>D: 返回JSON分析结果
+    D->>D: 解析响应为AssertionResult
+    D-->>F: 返回断言结果
+    F-->>C: 返回JSON响应
+```
+
+### 3.2 异步断言流程
+
+```mermaid
+sequenceDiagram
+    participant C as 客户端
+    participant F as FastAPI
+    participant TM as TaskManager
+    participant T as 后台线程
+    participant D as DoubaoClient
+    participant A as 豆包API
+
+    C->>F: POST /assert/async/upload<br/>(图片 + 预期描述)
+    F->>F: 验证图片
+    F->>TM: create_task()
+    TM-->>F: 返回 Task (status=pending)
+    F->>T: 启动后台线程
+    F-->>C: 立即返回 task_id
+
+    Note over C: 前端显示"AI分析中"
+
+    T->>TM: update_status(processing)
+    T->>D: assert_image()
+    D->>A: 调用豆包API
+    A-->>D: 返回结果
+    D-->>T: AssertionResult
+    T->>TM: update_status(completed, result)
+
+    loop 轮询 (每2秒)
+        C->>F: GET /task/{task_id}
+        F->>TM: get_task(task_id)
+        TM-->>F: Task
+        F-->>C: 返回任务状态
+    end
+
+    Note over C: 收到completed状态<br/>显示断言结果
+```
+
+### 3.3 前端交互流程
+
+```mermaid
+stateDiagram-v2
+    [*] --> 空闲状态
+    空闲状态 --> 选择图片: 拖拽/点击上传
+    选择图片 --> 图片预览: 文件验证通过
+    选择图片 --> 空闲状态: 验证失败
+
+    图片预览 --> 空闲状态: 移除图片
+    图片预览 --> 输入预期: 显示预览
+
+    输入预期 --> 可提交: 预期不为空
+    可提交 --> 提交中: 点击提交
+
+    提交中 --> 显示任务: 提交成功
+    提交中 --> 可提交: 提交失败
+
+    显示任务 --> 轮询状态: 任务pending/processing
+    轮询状态 --> 显示结果: 任务completed
+    轮询状态 --> 显示错误: 任务failed
+
+    显示结果 --> 空闲状态: 继续添加
+    显示错误 --> 空闲状态: 继续添加
+```
+
+### 3.4 任务状态机
+
+```mermaid
+stateDiagram-v2
+    [*] --> pending: 创建任务
+
+    pending --> processing: 开始处理
+    processing --> completed: 处理成功
+    processing --> failed: 处理失败
+
+    completed --> [*]
+    failed --> [*]
+
+    note right of pending
+        等待后台线程处理
+    end note
+
+    note right of processing
+        正在调用豆包API
+    end note
+
+    note right of completed
+        断言结果已就绪
+    end note
+
+    note right of failed
+        发生错误，记录错误信息
+    end note
+```
+
+---
+
+## 4. 数据模型
+
+### 4.1 类图
+
+```mermaid
+classDiagram
+    class ObjectDetail {
+        +str name
+        +int quantity
+        +float confidence
+        +str description
+    }
+
+    class AssertionResult {
+        +bool assertion_passed
+        +float confidence
+        +str expected_description
+        +str actual_description
+        +bool object_match
+        +bool quantity_match
+        +int expected_quantity
+        +int actual_quantity
+        +List~ObjectDetail~ detected_objects
+        +str reason
+    }
+
+    class AssertionRequest {
+        +str image_base64
+        +str expectation
+        +str image_format
+    }
+
+    class AssertionURLRequest {
+        +str image_url
+        +str expectation
+    }
+
+    class TaskResponse {
+        +str task_id
+        +str status
+        +str expectation
+        +str image_data
+        +str image_type
+        +AssertionResult result
+        +str error
+        +str created_at
+        +str completed_at
+    }
+
+    class TaskListResponse {
+        +List~TaskResponse~ tasks
+        +int total
+    }
+
+    class AssertionTask {
+        +str task_id
+        +str expectation
+        +str image_data
+        +str image_type
+        +str image_format
+        +TaskStatus status
+        +AssertionResult result
+        +str error
+        +datetime created_at
+        +datetime completed_at
+        +to_dict()
+    }
+
+    class TaskManager {
+        -Dict tasks
+        -Lock lock
+        +create_task()
+        +get_task()
+        +update_task_status()
+        +get_all_tasks()
+        +clear_tasks()
+    }
+
+    class DoubaoVisionClient {
+        -str api_key
+        -str api_base
+        -str model_endpoint
+        -OpenAI client
+        +assert_image()
+        +assert_image_url()
+        -_build_system_prompt()
+        -_build_user_prompt()
+        -_encode_image_to_base64()
+        -_parse_response()
+    }
+
+    AssertionResult "1" *-- "*" ObjectDetail
+    TaskResponse "1" o-- "0..1" AssertionResult
+    TaskListResponse "1" *-- "*" TaskResponse
+    AssertionTask "1" o-- "0..1" AssertionResult
+    TaskManager "1" *-- "*" AssertionTask
+    DoubaoVisionClient ..> AssertionResult : creates
+```
+
+### 4.2 断言结果 Schema
+
+```json
+{
+  "assertion_passed": true,
+  "confidence": 0.92,
+  "expected_description": "这张图里面有一双运动鞋",
+  "actual_description": "图片中可以看到一双白色的Nike运动鞋，放置在木地板上",
+  "object_match": true,
+  "quantity_match": true,
+  "expected_quantity": 2,
+  "actual_quantity": 2,
+  "detected_objects": [
+    {
+      "name": "运动鞋",
+      "quantity": 2,
+      "confidence": 0.95,
+      "description": "白色Nike运动鞋"
+    }
+  ],
+  "reason": "图片中确实存在一双（两只）运动鞋，物品类型和数量均符合预期"
+}
+```
+
+### 4.3 任务状态枚举
+
+| 状态 | 值 | 描述 |
+|------|-----|------|
+| PENDING | `pending` | 任务已创建，等待处理 |
+| PROCESSING | `processing` | 正在调用AI分析 |
+| COMPLETED | `completed` | 分析完成，结果就绪 |
+| FAILED | `failed` | 处理失败，记录错误信息 |
+
+---
+
+## 5. API接口文档
+
+### 5.1 接口总览
+
+| 接口 | 方法 | 描述 | 阻塞 |
+|------|------|------|------|
+| `/` | GET | 前端页面 | - |
+| `/health` | GET | 健康检查 | - |
+| `/assert/upload` | POST | 同步文件上传断言 | 是 |
+| `/assert/base64` | POST | 同步Base64断言 | 是 |
+| `/assert/url` | POST | 同步URL断言 | 是 |
+| `/assert/async/upload` | POST | 异步文件上传断言 | 否 |
+| `/assert/async/base64` | POST | 异步Base64断言 | 否 |
+| `/assert/async/url` | POST | 异步URL断言 | 否 |
+| `/task/{task_id}` | GET | 获取任务状态 | - |
+| `/tasks` | GET | 获取任务列表 | - |
+| `/tasks` | DELETE | 清空所有任务 | - |
+
+### 5.2 异步上传断言
+
+**请求**
+
+```http
+POST /assert/async/upload
+Content-Type: multipart/form-data
+```
+
+| 参数 | 类型 | 必填 | 描述 |
+|------|------|------|------|
+| image | File | 是 | 图片文件 |
+| expectation | string | 是 | 预期描述 |
+
+**响应**
+
+```json
+{
+  "task_id": "550e8400-e29b-41d4-a716-446655440000",
+  "status": "pending",
+  "expectation": "这张图里面有一双运动鞋",
+  "image_data": "base64...",
+  "image_type": "base64",
+  "created_at": "2024-01-15T10:30:00"
+}
+```
+
+### 5.3 获取任务状态
+
+**请求**
+
+```http
+GET /task/{task_id}
+```
+
+**响应 (处理中)**
+
+```json
+{
+  "task_id": "550e8400-e29b-41d4-a716-446655440000",
+  "status": "processing",
+  "expectation": "这张图里面有一双运动鞋",
+  "image_data": "base64...",
+  "image_type": "base64",
+  "result": null,
+  "error": null,
+  "created_at": "2024-01-15T10:30:00",
+  "completed_at": null
+}
+```
+
+**响应 (已完成)**
+
+```json
+{
+  "task_id": "550e8400-e29b-41d4-a716-446655440000",
+  "status": "completed",
+  "expectation": "这张图里面有一双运动鞋",
+  "image_data": "base64...",
+  "image_type": "base64",
+  "result": {
+    "assertion_passed": true,
+    "confidence": 0.92,
+    "object_match": true,
+    "quantity_match": true,
+    ...
+  },
+  "error": null,
+  "created_at": "2024-01-15T10:30:00",
+  "completed_at": "2024-01-15T10:30:15"
+}
+```
+
+### 5.4 API调用时序
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant API
+
+    rect rgb(100, 100, 200)
+        Note over Client, API: 步骤1: 提交断言任务
+        Client->>API: POST /assert/async/upload
+        API-->>Client: {task_id, status: "pending"}
+    end
+
+    rect rgb(100, 200, 100)
+        Note over Client, API: 步骤2: 轮询任务状态
+        loop 每2秒
+            Client->>API: GET /task/{task_id}
+            alt status == "processing"
+                API-->>Client: {status: "processing"}
+            else status == "completed"
+                API-->>Client: {status: "completed", result: {...}}
+            else status == "failed"
+                API-->>Client: {status: "failed", error: "..."}
+            end
+        end
+    end
+```
+
+---
+
+## 6. 模块设计
+
+### 6.1 豆包客户端模块
+
+```mermaid
+flowchart TB
+    subgraph DoubaoVisionClient
+        A[接收图片和预期] --> B[编码图片为Base64]
+        B --> C[构建系统提示词]
+        C --> D[构建用户提示词]
+        D --> E[调用OpenAI兼容API]
+        E --> F[解析JSON响应]
+        F --> G[构建AssertionResult]
+        G --> H[返回结果]
+    end
+
+    subgraph 系统提示词
+        S1["角色定义: 图像分析助手"]
+        S2["输出格式: JSON Schema"]
+        S3["注意事项: 数量理解规则"]
+    end
+
+    C -.-> S1
+    C -.-> S2
+    C -.-> S3
+```
+
+**提示词工程**
+
+系统提示词设计要点：
+1. 明确角色定义为"图像视觉分析助手"
+2. 严格定义JSON输出格式
+3. 处理数量词理解（如"一双"="2"）
+4. 低温度(0.1)确保输出稳定性
+
+### 6.2 任务管理器模块
+
+```mermaid
+flowchart LR
+    subgraph TaskManager
+        direction TB
+        Create["create_task()"] --> Store["存储到内存字典"]
+        Get["get_task()"] --> Read["读取任务"]
+        Update["update_task_status()"] --> Modify["修改任务状态"]
+        List["get_all_tasks()"] --> Sort["按时间排序返回"]
+        Clear["clear_tasks()"] --> Delete["清空字典"]
+    end
+
+    subgraph Thread Safety
+        Lock["threading.Lock"]
+    end
+
+    Store --> Lock
+    Read --> Lock
+    Modify --> Lock
+    Sort --> Lock
+    Delete --> Lock
+```
+
+### 6.3 前端模块
+
+```mermaid
+flowchart TB
+    subgraph 前端组件
+        Upload["上传组件<br/>(拖拽/点击)"]
+        Preview["预览组件"]
+        Form["表单组件"]
+        History["历史记录组件"]
+        Toast["通知组件"]
+    end
+
+    subgraph 状态管理
+        selectedFile["selectedFile"]
+        pollingTasks["pollingTasks Set"]
+    end
+
+    subgraph API交互
+        Submit["submitAssertion()"]
+        Poll["pollTask()"]
+        Load["loadTasks()"]
+    end
+
+    Upload --> selectedFile
+    selectedFile --> Preview
+    Form --> Submit
+    Submit --> History
+    Submit --> Poll
+    Poll --> History
+    Load --> History
+
+    style Upload fill:#6366f1,color:#fff
+    style History fill:#10b981,color:#fff
+```
+
+---
+
+## 7. 部署指南
+
+### 7.1 环境要求
+
+- Python 3.10+
+- pip 或 conda 包管理器
+
+### 7.2 安装步骤
+
+```bash
+# 1. 克隆代码
+git clone <repository-url>
+cd image_assertion_agent
+
+# 2. 创建虚拟环境
+python -m venv venv
+source venv/bin/activate  # Linux/Mac
+# 或 venv\Scripts\activate  # Windows
+
+# 3. 安装依赖
+pip install -r requirements.txt
+
+# 4. 配置环境变量
+cp .env.example .env
+# 编辑 .env 文件，填入实际配置
+```
+
+### 7.3 环境变量配置
+
+| 变量名 | 必填 | 说明 | 示例 |
+|--------|------|------|------|
+| `DOUBAO_API_KEY` | 是 | 豆包API密钥 | `ak-xxx` |
+| `DOUBAO_MODEL_ENDPOINT` | 是 | 模型端点ID | `ep-xxx` |
+| `DOUBAO_API_BASE` | 否 | API基础URL | `https://ark.cn-beijing.volces.com/api/v3` |
+| `HOST` | 否 | 服务监听地址 | `0.0.0.0` |
+| `PORT` | 否 | 服务端口 | `8000` |
+| `DEBUG` | 否 | 调试模式 | `false` |
+
+### 7.4 启动服务
+
+```bash
+# 开发环境
+python run.py
+
+# 生产环境
+uvicorn image_assertion_agent.api.main:app --host 0.0.0.0 --port 8000 --workers 4
+```
+
+### 7.5 部署架构
+
+```mermaid
+graph TB
+    subgraph Production["生产环境"]
+        LB["负载均衡<br/>(Nginx)"]
+
+        subgraph Workers["Uvicorn Workers"]
+            W1["Worker 1"]
+            W2["Worker 2"]
+            W3["Worker N"]
+        end
+
+        LB --> W1
+        LB --> W2
+        LB --> W3
+    end
+
+    Client["客户端"] --> LB
+    W1 --> DoubaoAPI["豆包API"]
+    W2 --> DoubaoAPI
+    W3 --> DoubaoAPI
+```
+
+---
+
+## 8. 使用示例
+
+### 8.1 Python客户端调用
+
+```python
+from image_assertion_agent.client_example import ImageAssertionClient
+
+# 创建客户端
+client = ImageAssertionClient("http://localhost:8000")
+
+# 方式1: 文件上传
+result = client.assert_image_file(
+    "shoes.jpg",
+    "这张图里面有一双运动鞋"
+)
+
+# 方式2: URL断言
+result = client.assert_image_url(
+    "https://example.com/image.jpg",
+    "图片中有3个红色苹果"
+)
+
+# 检查结果
+if result["assertion_passed"]:
+    print("✅ 断言通过!")
+    print(f"置信度: {result['confidence']:.1%}")
+else:
+    print("❌ 断言失败")
+    print(f"原因: {result['reason']}")
+```
+
+### 8.2 cURL调用
+
+```bash
+# 同步断言
+curl -X POST "http://localhost:8000/assert/upload" \
+  -F "image=@shoes.jpg" \
+  -F "expectation=这张图里面有一双运动鞋"
+
+# 异步断言
+curl -X POST "http://localhost:8000/assert/async/upload" \
+  -F "image=@shoes.jpg" \
+  -F "expectation=这张图里面有一双运动鞋"
+
+# 查询任务
+curl "http://localhost:8000/task/{task_id}"
+```
+
+### 8.3 JavaScript调用
+
+```javascript
+// 异步上传
+async function assertImage(file, expectation) {
+    const formData = new FormData();
+    formData.append('image', file);
+    formData.append('expectation', expectation);
+
+    // 提交任务
+    const response = await fetch('/assert/async/upload', {
+        method: 'POST',
+        body: formData
+    });
+    const task = await response.json();
+
+    // 轮询结果
+    return await pollResult(task.task_id);
+}
+
+async function pollResult(taskId) {
+    while (true) {
+        const response = await fetch(`/task/${taskId}`);
+        const task = await response.json();
+
+        if (task.status === 'completed') {
+            return task.result;
+        } else if (task.status === 'failed') {
+            throw new Error(task.error);
+        }
+
+        await new Promise(r => setTimeout(r, 2000));
+    }
+}
+```
+
+---
+
+## 附录
+
+### A. 错误码
+
+| HTTP状态码 | 错误描述 |
+|------------|----------|
+| 400 | 请求参数错误（无效图片、Base64解码失败等） |
+| 404 | 任务不存在 |
+| 500 | 服务器内部错误（AI调用失败等） |
+| 503 | 服务未配置（缺少API密钥） |
+
+### B. 性能指标
+
+| 指标 | 参考值 |
+|------|--------|
+| 单次断言响应时间 | 3-10秒（取决于图片大小和网络） |
+| 并发支持 | 取决于部署Worker数量 |
+| 图片大小限制 | 10MB |
+
+### C. 参考链接
+
+- [火山引擎控制台](https://console.volcengine.com/ark)
+- [豆包API文档](https://www.volcengine.com/docs/82379)
+- [FastAPI官方文档](https://fastapi.tiangolo.com/)
+- [Pydantic官方文档](https://docs.pydantic.dev/)
+
+---
+
+*文档版本: v1.0.0 | 最后更新: 2024年*
