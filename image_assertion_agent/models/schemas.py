@@ -115,3 +115,24 @@ class HealthResponse(BaseModel):
     status: str = Field(..., description="服务状态")
     config_valid: bool = Field(..., description="配置是否有效")
     message: Optional[str] = Field(default=None, description="额外信息")
+
+
+class TaskResponse(BaseModel):
+    """任务响应"""
+
+    task_id: str = Field(..., description="任务ID")
+    status: str = Field(..., description="任务状态: pending, processing, completed, failed")
+    expectation: str = Field(..., description="预期描述")
+    image_data: Optional[str] = Field(default=None, description="图片数据(base64或URL)")
+    image_type: str = Field(default="base64", description="图片类型: base64 或 url")
+    result: Optional[AssertionResult] = Field(default=None, description="断言结果")
+    error: Optional[str] = Field(default=None, description="错误信息")
+    created_at: str = Field(..., description="创建时间")
+    completed_at: Optional[str] = Field(default=None, description="完成时间")
+
+
+class TaskListResponse(BaseModel):
+    """任务列表响应"""
+
+    tasks: List[TaskResponse] = Field(default_factory=list, description="任务列表")
+    total: int = Field(..., description="总数")

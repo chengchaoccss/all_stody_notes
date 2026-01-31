@@ -1,0 +1,1017 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>图像视觉断言 Agent</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --primary: #6366f1;
+            --primary-dark: #4f46e5;
+            --success: #10b981;
+            --danger: #ef4444;
+            --warning: #f59e0b;
+            --bg-dark: #0f172a;
+            --bg-card: #1e293b;
+            --bg-card-hover: #334155;
+            --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --border: #334155;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: var(--bg-dark);
+            color: var(--text-primary);
+            min-height: 100vh;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        /* Header */
+        .header {
+            text-align: center;
+            padding: 40px 20px;
+            background: linear-gradient(135deg, var(--bg-card) 0%, var(--bg-dark) 100%);
+            border-bottom: 1px solid var(--border);
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            background: linear-gradient(135deg, #818cf8 0%, #c084fc 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            color: var(--text-secondary);
+            font-size: 1.1rem;
+        }
+
+        /* Main Layout */
+        .main-layout {
+            display: grid;
+            grid-template-columns: 400px 1fr;
+            gap: 30px;
+        }
+
+        @media (max-width: 1024px) {
+            .main-layout {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        /* Upload Panel */
+        .upload-panel {
+            background: var(--bg-card);
+            border-radius: 16px;
+            padding: 24px;
+            border: 1px solid var(--border);
+            height: fit-content;
+            position: sticky;
+            top: 20px;
+        }
+
+        .upload-panel h2 {
+            font-size: 1.25rem;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .upload-panel h2::before {
+            content: '';
+            width: 4px;
+            height: 24px;
+            background: linear-gradient(135deg, #818cf8 0%, #c084fc 100%);
+            border-radius: 2px;
+        }
+
+        /* Drop Zone */
+        .drop-zone {
+            border: 2px dashed var(--border);
+            border-radius: 12px;
+            padding: 40px 20px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-bottom: 20px;
+            background: rgba(99, 102, 241, 0.05);
+        }
+
+        .drop-zone:hover, .drop-zone.drag-over {
+            border-color: var(--primary);
+            background: rgba(99, 102, 241, 0.1);
+        }
+
+        .drop-zone-icon {
+            font-size: 48px;
+            margin-bottom: 10px;
+        }
+
+        .drop-zone p {
+            color: var(--text-secondary);
+            margin-bottom: 5px;
+        }
+
+        .drop-zone .browse-btn {
+            color: var(--primary);
+            cursor: pointer;
+            text-decoration: underline;
+        }
+
+        /* Preview */
+        .preview-container {
+            display: none;
+            margin-bottom: 20px;
+        }
+
+        .preview-container.active {
+            display: block;
+        }
+
+        .preview-image {
+            width: 100%;
+            max-height: 250px;
+            object-fit: contain;
+            border-radius: 12px;
+            border: 1px solid var(--border);
+        }
+
+        .preview-info {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 10px;
+            padding: 10px;
+            background: rgba(0,0,0,0.2);
+            border-radius: 8px;
+        }
+
+        .preview-info span {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+
+        .remove-btn {
+            background: var(--danger);
+            color: white;
+            border: none;
+            padding: 5px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.85rem;
+            transition: opacity 0.2s;
+        }
+
+        .remove-btn:hover {
+            opacity: 0.8;
+        }
+
+        /* Form */
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+            color: var(--text-secondary);
+        }
+
+        .form-group textarea {
+            width: 100%;
+            padding: 14px;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            background: var(--bg-dark);
+            color: var(--text-primary);
+            font-size: 1rem;
+            resize: vertical;
+            min-height: 100px;
+            transition: border-color 0.2s;
+        }
+
+        .form-group textarea:focus {
+            outline: none;
+            border-color: var(--primary);
+        }
+
+        .form-group textarea::placeholder {
+            color: var(--text-secondary);
+        }
+
+        /* Submit Button */
+        .submit-btn {
+            width: 100%;
+            padding: 16px;
+            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 1.1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+
+        .submit-btn:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 30px rgba(99, 102, 241, 0.3);
+        }
+
+        .submit-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        /* History Panel */
+        .history-panel {
+            background: var(--bg-card);
+            border-radius: 16px;
+            padding: 24px;
+            border: 1px solid var(--border);
+        }
+
+        .history-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .history-header h2 {
+            font-size: 1.25rem;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .history-header h2::before {
+            content: '';
+            width: 4px;
+            height: 24px;
+            background: linear-gradient(135deg, #10b981 0%, #34d399 100%);
+            border-radius: 2px;
+        }
+
+        .clear-btn {
+            background: transparent;
+            color: var(--text-secondary);
+            border: 1px solid var(--border);
+            padding: 8px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: all 0.2s;
+        }
+
+        .clear-btn:hover {
+            background: var(--danger);
+            color: white;
+            border-color: var(--danger);
+        }
+
+        /* Task Cards */
+        .task-list {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .task-card {
+            background: var(--bg-dark);
+            border-radius: 12px;
+            border: 1px solid var(--border);
+            overflow: hidden;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .task-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(0,0,0,0.3);
+        }
+
+        .task-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px;
+            background: rgba(0,0,0,0.2);
+            border-bottom: 1px solid var(--border);
+        }
+
+        .task-time {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+
+        .task-status {
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+
+        .task-status.pending {
+            background: rgba(245, 158, 11, 0.2);
+            color: var(--warning);
+        }
+
+        .task-status.processing {
+            background: rgba(99, 102, 241, 0.2);
+            color: var(--primary);
+            animation: pulse 1.5s infinite;
+        }
+
+        .task-status.completed {
+            background: rgba(16, 185, 129, 0.2);
+            color: var(--success);
+        }
+
+        .task-status.failed {
+            background: rgba(239, 68, 68, 0.2);
+            color: var(--danger);
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .task-body {
+            display: grid;
+            grid-template-columns: 120px 1fr;
+            gap: 16px;
+            padding: 16px;
+        }
+
+        @media (max-width: 600px) {
+            .task-body {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .task-image {
+            width: 120px;
+            height: 120px;
+            object-fit: cover;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+        }
+
+        .task-image-placeholder {
+            width: 120px;
+            height: 120px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: var(--bg-card);
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            color: var(--text-secondary);
+            font-size: 0.8rem;
+        }
+
+        .task-content {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .task-expectation {
+            background: rgba(99, 102, 241, 0.1);
+            padding: 12px;
+            border-radius: 8px;
+            border-left: 3px solid var(--primary);
+        }
+
+        .task-expectation-label {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 4px;
+        }
+
+        .task-expectation-text {
+            font-size: 0.95rem;
+        }
+
+        /* Result Area */
+        .task-result {
+            background: rgba(0,0,0,0.2);
+            padding: 12px;
+            border-radius: 8px;
+        }
+
+        .result-loading {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            color: var(--text-secondary);
+        }
+
+        .spinner {
+            width: 20px;
+            height: 20px;
+            border: 2px solid var(--border);
+            border-top-color: var(--primary);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .result-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-weight: 600;
+            font-size: 0.9rem;
+            margin-bottom: 12px;
+        }
+
+        .result-badge.passed {
+            background: rgba(16, 185, 129, 0.2);
+            color: var(--success);
+        }
+
+        .result-badge.failed {
+            background: rgba(239, 68, 68, 0.2);
+            color: var(--danger);
+        }
+
+        .result-details {
+            display: grid;
+            gap: 8px;
+        }
+
+        .result-row {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.9rem;
+            padding: 6px 0;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .result-row:last-child {
+            border-bottom: none;
+        }
+
+        .result-label {
+            color: var(--text-secondary);
+        }
+
+        .result-value {
+            font-weight: 500;
+        }
+
+        .result-value.match {
+            color: var(--success);
+        }
+
+        .result-value.no-match {
+            color: var(--danger);
+        }
+
+        .result-reason {
+            margin-top: 12px;
+            padding: 12px;
+            background: rgba(99, 102, 241, 0.1);
+            border-radius: 8px;
+            font-size: 0.9rem;
+            line-height: 1.5;
+        }
+
+        .result-reason-label {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 6px;
+        }
+
+        .error-message {
+            background: rgba(239, 68, 68, 0.1);
+            color: var(--danger);
+            padding: 12px;
+            border-radius: 8px;
+            font-size: 0.9rem;
+        }
+
+        /* Empty State */
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: var(--text-secondary);
+        }
+
+        .empty-state-icon {
+            font-size: 64px;
+            margin-bottom: 16px;
+            opacity: 0.5;
+        }
+
+        .empty-state p {
+            font-size: 1.1rem;
+        }
+
+        /* Hidden file input */
+        #fileInput {
+            display: none;
+        }
+
+        /* Toast */
+        .toast {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            padding: 16px 24px;
+            border-radius: 10px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.4);
+            transform: translateY(100px);
+            opacity: 0;
+            transition: all 0.3s ease;
+            z-index: 1000;
+        }
+
+        .toast.show {
+            transform: translateY(0);
+            opacity: 1;
+        }
+
+        .toast.success {
+            border-left: 4px solid var(--success);
+        }
+
+        .toast.error {
+            border-left: 4px solid var(--danger);
+        }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <h1>图像视觉断言 Agent</h1>
+        <p>基于豆包视觉大模型，智能验证图片内容是否符合预期</p>
+    </header>
+
+    <div class="container">
+        <div class="main-layout">
+            <!-- Upload Panel -->
+            <aside class="upload-panel">
+                <h2>新建断言</h2>
+
+                <input type="file" id="fileInput" accept="image/*">
+
+                <div class="drop-zone" id="dropZone">
+                    <div class="drop-zone-icon">📷</div>
+                    <p>拖拽图片到这里</p>
+                    <p>或 <span class="browse-btn" onclick="document.getElementById('fileInput').click()">浏览文件</span></p>
+                </div>
+
+                <div class="preview-container" id="previewContainer">
+                    <img id="previewImage" class="preview-image" src="" alt="预览">
+                    <div class="preview-info">
+                        <span id="fileInfo"></span>
+                        <button class="remove-btn" onclick="removeImage()">移除</button>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="expectation">预期描述</label>
+                    <textarea
+                        id="expectation"
+                        placeholder="例如：这张图里面有一双运动鞋&#10;或：图片中有3个红色的苹果"
+                    ></textarea>
+                </div>
+
+                <button class="submit-btn" id="submitBtn" onclick="submitAssertion()" disabled>
+                    <span>🔍</span>
+                    <span>开始断言</span>
+                </button>
+            </aside>
+
+            <!-- History Panel -->
+            <main class="history-panel">
+                <div class="history-header">
+                    <h2>断言记录</h2>
+                    <button class="clear-btn" onclick="clearHistory()">清空记录</button>
+                </div>
+
+                <div class="task-list" id="taskList">
+                    <div class="empty-state" id="emptyState">
+                        <div class="empty-state-icon">📋</div>
+                        <p>暂无断言记录</p>
+                        <p style="font-size: 0.9rem; margin-top: 8px;">上传图片并输入预期开始第一次断言</p>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <script>
+        // State
+        let selectedFile = null;
+        let pollingTasks = new Set();
+
+        // Elements
+        const dropZone = document.getElementById('dropZone');
+        const fileInput = document.getElementById('fileInput');
+        const previewContainer = document.getElementById('previewContainer');
+        const previewImage = document.getElementById('previewImage');
+        const fileInfo = document.getElementById('fileInfo');
+        const expectationInput = document.getElementById('expectation');
+        const submitBtn = document.getElementById('submitBtn');
+        const taskList = document.getElementById('taskList');
+        const emptyState = document.getElementById('emptyState');
+
+        // Initialize
+        init();
+
+        function init() {
+            setupDropZone();
+            setupFileInput();
+            setupExpectationInput();
+            loadTasks();
+        }
+
+        // Drop Zone
+        function setupDropZone() {
+            dropZone.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                dropZone.classList.add('drag-over');
+            });
+
+            dropZone.addEventListener('dragleave', () => {
+                dropZone.classList.remove('drag-over');
+            });
+
+            dropZone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                dropZone.classList.remove('drag-over');
+                const files = e.dataTransfer.files;
+                if (files.length > 0 && files[0].type.startsWith('image/')) {
+                    handleFile(files[0]);
+                }
+            });
+
+            dropZone.addEventListener('click', () => {
+                fileInput.click();
+            });
+        }
+
+        function setupFileInput() {
+            fileInput.addEventListener('change', (e) => {
+                if (e.target.files.length > 0) {
+                    handleFile(e.target.files[0]);
+                }
+            });
+        }
+
+        function setupExpectationInput() {
+            expectationInput.addEventListener('input', updateSubmitButton);
+        }
+
+        function handleFile(file) {
+            if (!file.type.startsWith('image/')) {
+                showToast('请选择图片文件', 'error');
+                return;
+            }
+
+            if (file.size > 10 * 1024 * 1024) {
+                showToast('图片大小不能超过10MB', 'error');
+                return;
+            }
+
+            selectedFile = file;
+
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                previewImage.src = e.target.result;
+                fileInfo.textContent = `${file.name} (${formatFileSize(file.size)})`;
+                dropZone.style.display = 'none';
+                previewContainer.classList.add('active');
+                updateSubmitButton();
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function removeImage() {
+            selectedFile = null;
+            fileInput.value = '';
+            previewContainer.classList.remove('active');
+            dropZone.style.display = 'block';
+            updateSubmitButton();
+        }
+
+        function updateSubmitButton() {
+            const hasImage = selectedFile !== null;
+            const hasExpectation = expectationInput.value.trim().length > 0;
+            submitBtn.disabled = !(hasImage && hasExpectation);
+        }
+
+        // Submit
+        async function submitAssertion() {
+            if (!selectedFile || !expectationInput.value.trim()) return;
+
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<span class="spinner"></span><span>提交中...</span>';
+
+            try {
+                const formData = new FormData();
+                formData.append('image', selectedFile);
+                formData.append('expectation', expectationInput.value.trim());
+
+                const response = await fetch('/assert/async/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || '提交失败');
+                }
+
+                const task = await response.json();
+                showToast('断言任务已提交', 'success');
+
+                // Reset form
+                removeImage();
+                expectationInput.value = '';
+
+                // Add to list and start polling
+                addTaskToList(task);
+                startPolling(task.task_id);
+
+            } catch (error) {
+                showToast(error.message, 'error');
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '<span>🔍</span><span>开始断言</span>';
+                updateSubmitButton();
+            }
+        }
+
+        // Task List
+        async function loadTasks() {
+            try {
+                const response = await fetch('/tasks?limit=50');
+                if (response.ok) {
+                    const data = await response.json();
+                    renderTasks(data.tasks);
+
+                    // Start polling for pending/processing tasks
+                    data.tasks.forEach(task => {
+                        if (task.status === 'pending' || task.status === 'processing') {
+                            startPolling(task.task_id);
+                        }
+                    });
+                }
+            } catch (error) {
+                console.error('Failed to load tasks:', error);
+            }
+        }
+
+        function renderTasks(tasks) {
+            if (tasks.length === 0) {
+                emptyState.style.display = 'block';
+                return;
+            }
+
+            emptyState.style.display = 'none';
+
+            // Sort by created_at descending
+            tasks.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+            taskList.innerHTML = '';
+            tasks.forEach(task => {
+                taskList.appendChild(createTaskCard(task));
+            });
+        }
+
+        function addTaskToList(task) {
+            emptyState.style.display = 'none';
+            const card = createTaskCard(task);
+            taskList.insertBefore(card, taskList.firstChild);
+        }
+
+        function createTaskCard(task) {
+            const card = document.createElement('div');
+            card.className = 'task-card';
+            card.id = `task-${task.task_id}`;
+            card.innerHTML = getTaskCardHTML(task);
+            return card;
+        }
+
+        function getTaskCardHTML(task) {
+            const statusText = {
+                'pending': '等待中',
+                'processing': 'AI分析中',
+                'completed': '已完成',
+                'failed': '失败'
+            };
+
+            const imageHTML = task.image_type === 'url'
+                ? `<img class="task-image" src="${task.image_data}" alt="图片" onerror="this.outerHTML='<div class=\\'task-image-placeholder\\'>URL图片</div>'">`
+                : task.image_data
+                    ? `<img class="task-image" src="data:image/jpeg;base64,${task.image_data}" alt="图片">`
+                    : `<div class="task-image-placeholder">无预览</div>`;
+
+            let resultHTML = '';
+            if (task.status === 'pending' || task.status === 'processing') {
+                resultHTML = `
+                    <div class="result-loading">
+                        <div class="spinner"></div>
+                        <span>AI分析中，请稍候...</span>
+                    </div>
+                `;
+            } else if (task.status === 'failed') {
+                resultHTML = `
+                    <div class="error-message">
+                        ${task.error || '分析失败，请重试'}
+                    </div>
+                `;
+            } else if (task.result) {
+                const r = task.result;
+                resultHTML = `
+                    <div class="result-badge ${r.assertion_passed ? 'passed' : 'failed'}">
+                        ${r.assertion_passed ? '✓ 断言通过' : '✗ 断言失败'}
+                    </div>
+                    <div class="result-details">
+                        <div class="result-row">
+                            <span class="result-label">置信度</span>
+                            <span class="result-value">${(r.confidence * 100).toFixed(1)}%</span>
+                        </div>
+                        <div class="result-row">
+                            <span class="result-label">物品匹配</span>
+                            <span class="result-value ${r.object_match ? 'match' : 'no-match'}">
+                                ${r.object_match ? '✓ 匹配' : '✗ 不匹配'}
+                            </span>
+                        </div>
+                        <div class="result-row">
+                            <span class="result-label">数量匹配</span>
+                            <span class="result-value ${r.quantity_match ? 'match' : 'no-match'}">
+                                ${r.quantity_match ? '✓ 匹配' : '✗ 不匹配'}
+                                ${r.expected_quantity !== null ? ` (预期: ${r.expected_quantity}, 实际: ${r.actual_quantity || 0})` : ''}
+                            </span>
+                        </div>
+                    </div>
+                    ${r.actual_description ? `
+                        <div class="result-reason">
+                            <div class="result-reason-label">实际内容</div>
+                            ${r.actual_description}
+                        </div>
+                    ` : ''}
+                    ${r.reason ? `
+                        <div class="result-reason">
+                            <div class="result-reason-label">分析理由</div>
+                            ${r.reason}
+                        </div>
+                    ` : ''}
+                `;
+            }
+
+            return `
+                <div class="task-header">
+                    <span class="task-time">${formatTime(task.created_at)}</span>
+                    <span class="task-status ${task.status}">${statusText[task.status]}</span>
+                </div>
+                <div class="task-body">
+                    ${imageHTML}
+                    <div class="task-content">
+                        <div class="task-expectation">
+                            <div class="task-expectation-label">预期</div>
+                            <div class="task-expectation-text">${escapeHTML(task.expectation)}</div>
+                        </div>
+                        <div class="task-result">
+                            ${resultHTML}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function updateTaskCard(task) {
+            const card = document.getElementById(`task-${task.task_id}`);
+            if (card) {
+                card.innerHTML = getTaskCardHTML(task);
+            }
+        }
+
+        // Polling
+        function startPolling(taskId) {
+            if (pollingTasks.has(taskId)) return;
+            pollingTasks.add(taskId);
+            pollTask(taskId);
+        }
+
+        async function pollTask(taskId) {
+            if (!pollingTasks.has(taskId)) return;
+
+            try {
+                const response = await fetch(`/task/${taskId}`);
+                if (response.ok) {
+                    const task = await response.json();
+                    updateTaskCard(task);
+
+                    if (task.status === 'completed' || task.status === 'failed') {
+                        pollingTasks.delete(taskId);
+                        return;
+                    }
+                }
+            } catch (error) {
+                console.error('Polling error:', error);
+            }
+
+            // Continue polling
+            setTimeout(() => pollTask(taskId), 2000);
+        }
+
+        // Clear History
+        async function clearHistory() {
+            if (!confirm('确定要清空所有断言记录吗？')) return;
+
+            try {
+                const response = await fetch('/tasks', { method: 'DELETE' });
+                if (response.ok) {
+                    pollingTasks.clear();
+                    taskList.innerHTML = '';
+                    emptyState.style.display = 'block';
+                    taskList.appendChild(emptyState);
+                    showToast('记录已清空', 'success');
+                }
+            } catch (error) {
+                showToast('清空失败', 'error');
+            }
+        }
+
+        // Utilities
+        function formatFileSize(bytes) {
+            if (bytes < 1024) return bytes + ' B';
+            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+            return (bytes / 1024 / 1024).toFixed(1) + ' MB';
+        }
+
+        function formatTime(isoString) {
+            const date = new Date(isoString);
+            const now = new Date();
+            const diff = now - date;
+
+            if (diff < 60000) return '刚刚';
+            if (diff < 3600000) return `${Math.floor(diff / 60000)} 分钟前`;
+            if (diff < 86400000) return `${Math.floor(diff / 3600000)} 小时前`;
+
+            return date.toLocaleString('zh-CN', {
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        }
+
+        function escapeHTML(str) {
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+
+        function showToast(message, type = 'success') {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.className = `toast ${type} show`;
+            setTimeout(() => {
+                toast.classList.remove('show');
+            }, 3000);
+        }
+    </script>
+</body>
+</html>
