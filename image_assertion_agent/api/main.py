@@ -1,20 +1,23 @@
 """
 图像视觉断言Agent - FastAPI后端服务
+支持重试机制、持久化存储和完整日志记录
 """
 import base64
 import threading
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import List, Optional
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from ..config import settings
-from ..core.doubao_client import DoubaoVisionClient
+from ..core.doubao_client import DoubaoVisionClient, RetryableError
 from ..core.task_manager import TaskManager, TaskStatus, task_manager
+from ..core.logger import logger, set_trace_id
 from ..models.schemas import (
     AssertionRequest,
     AssertionResult,
@@ -36,8 +39,12 @@ def process_task_async(
     expect_image_bytes: Optional[bytes] = None,
     expect_image_format: str = "jpeg",
 ):
-    """在后台线程中处理任务"""
+    """在后台线程中处理任务（支持重试和日志）"""
     global vision_client
+
+    # 设置追踪ID
+    set_trace_id(task_id[:8])
+    start_time = time.time()
 
     task_manager.update_task_status(task_id, TaskStatus.PROCESSING)
 
@@ -45,16 +52,45 @@ def process_task_async(
         if vision_client is None:
             raise Exception("视觉客户端未初始化")
 
-        result = vision_client.assert_image(
+        # 调用豆包API（带重试）
+        result, raw_response = vision_client.assert_image(
             image_bytes=image_bytes,
             expectation=expectation,
             image_format=image_format,
             expect_image_bytes=expect_image_bytes,
             expect_image_format=expect_image_format,
+            task_id=task_id,
         )
-        task_manager.update_task_status(task_id, TaskStatus.COMPLETED, result=result)
+
+        duration_ms = (time.time() - start_time) * 1000
+
+        task_manager.update_task_status(
+            task_id,
+            TaskStatus.COMPLETED,
+            result=result,
+            raw_response=raw_response,
+            duration_ms=duration_ms,
+        )
+
+    except RetryableError as e:
+        duration_ms = (time.time() - start_time) * 1000
+        logger.error(f"任务失败（重试已用尽）: {e}", task_id=task_id)
+        task_manager.update_task_status(
+            task_id,
+            TaskStatus.FAILED,
+            error=str(e),
+            duration_ms=duration_ms,
+        )
+
     except Exception as e:
-        task_manager.update_task_status(task_id, TaskStatus.FAILED, error=str(e))
+        duration_ms = (time.time() - start_time) * 1000
+        logger.error(f"任务失败: {e}", task_id=task_id, error=str(e))
+        task_manager.update_task_status(
+            task_id,
+            TaskStatus.FAILED,
+            error=str(e),
+            duration_ms=duration_ms,
+        )
 
 
 def process_url_task_async(
@@ -63,8 +99,11 @@ def process_url_task_async(
     expectation: str,
     expect_image_url: Optional[str] = None,
 ):
-    """在后台线程中处理URL任务"""
+    """在后台线程中处理URL任务（支持重试和日志）"""
     global vision_client
+
+    set_trace_id(task_id[:8])
+    start_time = time.time()
 
     task_manager.update_task_status(task_id, TaskStatus.PROCESSING)
 
@@ -72,14 +111,42 @@ def process_url_task_async(
         if vision_client is None:
             raise Exception("视觉客户端未初始化")
 
-        result = vision_client.assert_image_url(
+        result, raw_response = vision_client.assert_image_url(
             image_url=image_url,
             expectation=expectation,
             expect_image_url=expect_image_url,
+            task_id=task_id,
         )
-        task_manager.update_task_status(task_id, TaskStatus.COMPLETED, result=result)
+
+        duration_ms = (time.time() - start_time) * 1000
+
+        task_manager.update_task_status(
+            task_id,
+            TaskStatus.COMPLETED,
+            result=result,
+            raw_response=raw_response,
+            duration_ms=duration_ms,
+        )
+
+    except RetryableError as e:
+        duration_ms = (time.time() - start_time) * 1000
+        logger.error(f"URL任务失败（重试已用尽）: {e}", task_id=task_id)
+        task_manager.update_task_status(
+            task_id,
+            TaskStatus.FAILED,
+            error=str(e),
+            duration_ms=duration_ms,
+        )
+
     except Exception as e:
-        task_manager.update_task_status(task_id, TaskStatus.FAILED, error=str(e))
+        duration_ms = (time.time() - start_time) * 1000
+        logger.error(f"URL任务失败: {e}", task_id=task_id, error=str(e))
+        task_manager.update_task_status(
+            task_id,
+            TaskStatus.FAILED,
+            error=str(e),
+            duration_ms=duration_ms,
+        )
 
 
 @asynccontextmanager
@@ -461,7 +528,7 @@ async def assert_image_upload(
         expect_image_format = expect_content_type.split("/")[-1] if "/" in expect_content_type else "jpeg"
 
     try:
-        result = client.assert_image(
+        result, _ = client.assert_image(
             image_bytes=image_bytes,
             expectation=expectation,
             image_format=image_format,
@@ -469,6 +536,8 @@ async def assert_image_upload(
             expect_image_format=expect_image_format,
         )
         return result
+    except RetryableError as e:
+        raise HTTPException(status_code=500, detail=f"图像分析失败（重试已用尽）: {str(e)}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"图像分析失败: {str(e)}")
 
@@ -501,7 +570,7 @@ async def assert_image_base64(request: AssertionRequest):
             raise HTTPException(status_code=400, detail="预期图片Base64编码无效")
 
     try:
-        result = client.assert_image(
+        result, _ = client.assert_image(
             image_bytes=image_bytes,
             expectation=request.expectation,
             image_format=request.image_format,
@@ -509,6 +578,8 @@ async def assert_image_base64(request: AssertionRequest):
             expect_image_format=request.expect_image_format,
         )
         return result
+    except RetryableError as e:
+        raise HTTPException(status_code=500, detail=f"图像分析失败（重试已用尽）: {str(e)}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"图像分析失败: {str(e)}")
 
@@ -523,12 +594,14 @@ async def assert_image_url(request: AssertionURLRequest):
         raise HTTPException(status_code=400, detail="请提供预期描述或预期图片URL")
 
     try:
-        result = client.assert_image_url(
+        result, _ = client.assert_image_url(
             image_url=request.image_url,
             expectation=request.expectation,
             expect_image_url=request.expect_image_url,
         )
         return result
+    except RetryableError as e:
+        raise HTTPException(status_code=500, detail=f"图像分析失败（重试已用尽）: {str(e)}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"图像分析失败: {str(e)}")
 

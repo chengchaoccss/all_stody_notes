@@ -1,21 +1,29 @@
 """
 豆包视觉API客户端
 使用OpenAI兼容接口调用豆包视觉大模型
+支持重试机制和置信度阈值
 """
 import base64
 import io
 import json
+import time
 from typing import Optional, Tuple
 
-from openai import OpenAI
+from openai import OpenAI, APIError, APITimeoutError, APIConnectionError
 from PIL import Image
 
 from ..config import settings
 from ..models.schemas import AssertionResult, ObjectDetail
+from .logger import logger
+
+
+class RetryableError(Exception):
+    """可重试的错误"""
+    pass
 
 
 class DoubaoVisionClient:
-    """豆包视觉API客户端"""
+    """豆包视觉API客户端（支持重试和置信度阈值）"""
 
     def __init__(
         self,
@@ -27,10 +35,26 @@ class DoubaoVisionClient:
         self.api_base = api_base or settings.DOUBAO_API_BASE
         self.model_endpoint = model_endpoint or settings.DOUBAO_MODEL_ENDPOINT
 
+        # 重试配置
+        self.max_retries = settings.API_MAX_RETRIES
+        self.retry_base_delay = settings.API_RETRY_BASE_DELAY
+        self.retry_max_delay = settings.API_RETRY_MAX_DELAY
+        self.timeout = settings.API_TIMEOUT
+
+        # 置信度配置
+        self.confidence_threshold = settings.CONFIDENCE_THRESHOLD
+        self.low_confidence_retry = settings.LOW_CONFIDENCE_RETRY
+
         self.client = OpenAI(
             api_key=self.api_key,
             base_url=self.api_base,
+            timeout=self.timeout,
         )
+
+    def _calculate_retry_delay(self, attempt: int) -> float:
+        """计算重试延迟（指数退避）"""
+        delay = self.retry_base_delay * (2 ** (attempt - 1))
+        return min(delay, self.retry_max_delay)
 
     def _get_image_resolution(self, image_bytes: bytes) -> Tuple[int, int]:
         """获取图片分辨率"""
@@ -307,9 +331,10 @@ class DoubaoVisionClient:
         image_format: str = "jpeg",
         expect_image_bytes: Optional[bytes] = None,
         expect_image_format: str = "jpeg",
-    ) -> AssertionResult:
+        task_id: Optional[str] = None,
+    ) -> Tuple[AssertionResult, str]:
         """
-        对图片进行视觉断言
+        对图片进行视觉断言（支持重试和置信度阈值）
 
         Args:
             image_bytes: 测试图片的二进制数据
@@ -317,9 +342,10 @@ class DoubaoVisionClient:
             image_format: 测试图片格式，如 jpeg, png, webp 等
             expect_image_bytes: 预期图片的二进制数据（可选，局部参考图）
             expect_image_format: 预期图片格式
+            task_id: 任务ID（用于日志追踪）
 
         Returns:
-            AssertionResult: 断言结果
+            Tuple[AssertionResult, str]: (断言结果, 原始响应文本)
         """
         has_expect_image = expect_image_bytes is not None
         same_resolution = False
@@ -327,6 +353,11 @@ class DoubaoVisionClient:
         # 检测分辨率是否一致
         if has_expect_image:
             same_resolution = self._check_same_resolution(image_bytes, expect_image_bytes)
+
+        # 确定prompt类型
+        prompt_type = "text_only"
+        if has_expect_image:
+            prompt_type = "similarity" if same_resolution else "partial"
 
         # 将测试图片编码为base64
         image_base64 = self._encode_image_to_base64(image_bytes)
@@ -364,36 +395,126 @@ class DoubaoVisionClient:
             {"role": "user", "content": content},
         ]
 
-        # 调用API
-        response = self.client.chat.completions.create(
-            model=self.model_endpoint,
-            messages=messages,
-            temperature=0.1,  # 低温度以获得更稳定的输出
-            max_tokens=2000,
-        )
+        # 带重试的API调用
+        last_error = None
+        last_result = None
+        last_response = None
 
-        # 解析响应
-        response_text = response.choices[0].message.content
-        return self._parse_response(response_text, expectation, has_expect_image, same_resolution)
+        for attempt in range(1, self.max_retries + 1):
+            start_time = time.time()
+
+            logger.log_doubao_call(
+                task_id=task_id or "unknown",
+                attempt=attempt,
+                max_attempts=self.max_retries,
+                prompt_type=prompt_type,
+            )
+
+            try:
+                response = self.client.chat.completions.create(
+                    model=self.model_endpoint,
+                    messages=messages,
+                    temperature=0.1,
+                    max_tokens=2000,
+                )
+
+                duration_ms = (time.time() - start_time) * 1000
+                response_text = response.choices[0].message.content
+
+                # 解析响应
+                result = self._parse_response(response_text, expectation, has_expect_image, same_resolution)
+
+                logger.log_doubao_response(
+                    task_id=task_id or "unknown",
+                    success=True,
+                    duration_ms=duration_ms,
+                    confidence=result.confidence,
+                    assertion_passed=result.assertion_passed,
+                    raw_response_preview=response_text,
+                )
+
+                # 检查置信度
+                if result.confidence < self.confidence_threshold:
+                    logger.log_low_confidence(
+                        task_id=task_id or "unknown",
+                        confidence=result.confidence,
+                        threshold=self.confidence_threshold,
+                        will_retry=self.low_confidence_retry and attempt < self.max_retries,
+                    )
+
+                    # 如果开启低置信度重试且还有重试次数
+                    if self.low_confidence_retry and attempt < self.max_retries:
+                        last_result = result
+                        last_response = response_text
+                        delay = self._calculate_retry_delay(attempt)
+                        logger.log_retry(
+                            task_id=task_id or "unknown",
+                            attempt=attempt,
+                            reason=f"低置信度 {result.confidence:.2f}",
+                            delay_seconds=delay,
+                        )
+                        time.sleep(delay)
+                        continue
+
+                # 成功返回（或最后一次尝试）
+                return result, response_text
+
+            except (APIError, APITimeoutError, APIConnectionError) as e:
+                duration_ms = (time.time() - start_time) * 1000
+                last_error = str(e)
+
+                logger.log_doubao_response(
+                    task_id=task_id or "unknown",
+                    success=False,
+                    duration_ms=duration_ms,
+                    raw_response_preview=str(e),
+                )
+
+                if attempt < self.max_retries:
+                    delay = self._calculate_retry_delay(attempt)
+                    logger.log_retry(
+                        task_id=task_id or "unknown",
+                        attempt=attempt,
+                        reason=f"API错误: {type(e).__name__}",
+                        delay_seconds=delay,
+                    )
+                    time.sleep(delay)
+                else:
+                    raise RetryableError(f"API调用失败，已重试{self.max_retries}次: {last_error}")
+
+            except Exception as e:
+                duration_ms = (time.time() - start_time) * 1000
+                logger.error(f"未预期的错误: {e}", task_id=task_id, error=str(e))
+                raise
+
+        # 如果有上次的结果（低置信度情况），返回它
+        if last_result:
+            return last_result, last_response or ""
+
+        # 不应该到达这里
+        raise RetryableError(f"API调用失败: {last_error}")
 
     def assert_image_url(
         self,
         image_url: str,
         expectation: str,
         expect_image_url: Optional[str] = None,
-    ) -> AssertionResult:
+        task_id: Optional[str] = None,
+    ) -> Tuple[AssertionResult, str]:
         """
-        对URL图片进行视觉断言
+        对URL图片进行视觉断言（支持重试和置信度阈值）
 
         Args:
             image_url: 测试图片URL
             expectation: 用户的预期描述
             expect_image_url: 预期图片URL（可选，局部参考图）
+            task_id: 任务ID（用于日志追踪）
 
         Returns:
-            AssertionResult: 断言结果
+            Tuple[AssertionResult, str]: (断言结果, 原始响应文本)
         """
         has_expect_image = expect_image_url is not None
+        prompt_type = "partial" if has_expect_image else "text_only"
 
         # 构建消息内容
         content = [
@@ -415,12 +536,96 @@ class DoubaoVisionClient:
             {"role": "user", "content": content},
         ]
 
-        response = self.client.chat.completions.create(
-            model=self.model_endpoint,
-            messages=messages,
-            temperature=0.1,
-            max_tokens=2000,
-        )
+        # 带重试的API调用
+        last_error = None
+        last_result = None
+        last_response = None
 
-        response_text = response.choices[0].message.content
-        return self._parse_response(response_text, expectation, has_expect_image)
+        for attempt in range(1, self.max_retries + 1):
+            start_time = time.time()
+
+            logger.log_doubao_call(
+                task_id=task_id or "unknown",
+                attempt=attempt,
+                max_attempts=self.max_retries,
+                prompt_type=prompt_type,
+            )
+
+            try:
+                response = self.client.chat.completions.create(
+                    model=self.model_endpoint,
+                    messages=messages,
+                    temperature=0.1,
+                    max_tokens=2000,
+                )
+
+                duration_ms = (time.time() - start_time) * 1000
+                response_text = response.choices[0].message.content
+
+                # 解析响应
+                result = self._parse_response(response_text, expectation, has_expect_image)
+
+                logger.log_doubao_response(
+                    task_id=task_id or "unknown",
+                    success=True,
+                    duration_ms=duration_ms,
+                    confidence=result.confidence,
+                    assertion_passed=result.assertion_passed,
+                    raw_response_preview=response_text,
+                )
+
+                # 检查置信度
+                if result.confidence < self.confidence_threshold:
+                    logger.log_low_confidence(
+                        task_id=task_id or "unknown",
+                        confidence=result.confidence,
+                        threshold=self.confidence_threshold,
+                        will_retry=self.low_confidence_retry and attempt < self.max_retries,
+                    )
+
+                    if self.low_confidence_retry and attempt < self.max_retries:
+                        last_result = result
+                        last_response = response_text
+                        delay = self._calculate_retry_delay(attempt)
+                        logger.log_retry(
+                            task_id=task_id or "unknown",
+                            attempt=attempt,
+                            reason=f"低置信度 {result.confidence:.2f}",
+                            delay_seconds=delay,
+                        )
+                        time.sleep(delay)
+                        continue
+
+                return result, response_text
+
+            except (APIError, APITimeoutError, APIConnectionError) as e:
+                duration_ms = (time.time() - start_time) * 1000
+                last_error = str(e)
+
+                logger.log_doubao_response(
+                    task_id=task_id or "unknown",
+                    success=False,
+                    duration_ms=duration_ms,
+                    raw_response_preview=str(e),
+                )
+
+                if attempt < self.max_retries:
+                    delay = self._calculate_retry_delay(attempt)
+                    logger.log_retry(
+                        task_id=task_id or "unknown",
+                        attempt=attempt,
+                        reason=f"API错误: {type(e).__name__}",
+                        delay_seconds=delay,
+                    )
+                    time.sleep(delay)
+                else:
+                    raise RetryableError(f"API调用失败，已重试{self.max_retries}次: {last_error}")
+
+            except Exception as e:
+                logger.error(f"未预期的错误: {e}", task_id=task_id, error=str(e))
+                raise
+
+        if last_result:
+            return last_result, last_response or ""
+
+        raise RetryableError(f"API调用失败: {last_error}")
