@@ -1,0 +1,26 @@
+# CI Pipeline Mapping
+# -------------------
+# Each key is a pipeline name accepted by POST /tools/trigger_pipeline.
+#
+# Fields per entry:
+#   script      (required) — path relative to the project root
+#   args        (optional) — list of default CLI arguments passed to the script
+#   timeout_sec (optional) — max execution time in seconds (default: 300)
+#
+# Security: only scripts listed here can be executed.  Paths must be
+# relative and must not escape the project root.
+
+daily:
+  script: scripts/run_ci.py
+  args: ["--type", "daily"]
+  timeout_sec: 600
+
+release:
+  script: scripts/run_ci.py
+  args: ["--type", "release"]
+  timeout_sec: 1200
+
+smoke:
+  script: scripts/run_ci.py
+  args: ["--type", "smoke"]
+  timeout_sec: 300

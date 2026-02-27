@@ -1,0 +1,22 @@
+# Device Configuration
+# --------------------
+# Controls default behaviour when device_id is not supplied in API calls.
+#
+#   default_device: null   — auto-select the only connected device
+#   default_device: "emulator-5554"  — always use this serial by default
+
+default_device: null
+
+# ADB command timeouts (seconds)
+adb:
+  timeout_install: 120
+  timeout_pull: 120
+  timeout_default: 60
+  timeout_aapt: 30
+
+# screenrecord settings
+screenrecord:
+  # Remote path on the device where the video is stored temporarily
+  remote_path: /sdcard/mcp_record.mp4
+  # Seconds to wait after sending SIGINT before pulling the file
+  stop_wait_sec: 2

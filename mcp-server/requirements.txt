@@ -1,0 +1,15 @@
+# MCP Device Automation Server — Python dependencies
+# Install with: pip install -r requirements.txt
+
+# Web framework & ASGI server
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+
+# Data validation (FastAPI uses pydantic v2 by default)
+pydantic>=2.0
+
+# Async HTTP client (APK downloader)
+httpx>=0.26.0
+
+# YAML parsing (ci_mapping.yaml, device.yaml)
+pyyaml>=6.0
