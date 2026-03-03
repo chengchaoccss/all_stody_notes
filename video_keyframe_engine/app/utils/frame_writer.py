@@ -2,7 +2,7 @@
 关键帧图片写入模块。
 
 将提取的关键帧保存为 JPEG 图片文件。
-文件命名格式：frame_NNNN_T.TTs.jpg
+文件命名格式：frame_NNNN_tNNNNNNms.jpg（毫秒精度，无歧义）
 """
 
 import os
@@ -37,8 +37,10 @@ class FrameWriter:
         """
         将帧保存为 JPEG 图片。
 
-        文件命名规则：frame_NNNN_T.TTs.jpg
-        例如：frame_0001_0.230s.jpg
+        文件命名规则：frame_NNNN_tNNNNNNms.jpg
+        例如：frame_0001_t000230ms.jpg（表示 0.230 秒）
+
+        毫秒精度命名避免了浮点数小数点在文件名中造成的歧义。
 
         Args:
             frame: 帧图像数据（BGR numpy 数组）
@@ -48,7 +50,8 @@ class FrameWriter:
         Returns:
             保存的文件路径
         """
-        filename = f"frame_{index:04d}_{timestamp_sec:.2f}s.jpg"
+        timestamp_ms = int(round(timestamp_sec * 1000))
+        filename = f"frame_{index:04d}_t{timestamp_ms:06d}ms.jpg"
         filepath = os.path.join(self.frames_dir, filename)
 
         encode_params = [cv2.IMWRITE_JPEG_QUALITY, self.quality]

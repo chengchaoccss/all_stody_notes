@@ -7,9 +7,11 @@
 - **时间采样模式** — 按固定时间间隔精准跳帧采样
 - **帧差法** — 基于相邻帧灰度差值检测关键帧
 - **光流法** — 基于 Farneback 密集光流检测运动突变
-- **场景检测** — 基于 HSV 直方图 Bhattacharyya 距离检测场景切换
+- **场景检测** — 基于 HSV H+S 通道直方图 Bhattacharyya 距离检测场景切换（去掉 V 通道抗光照干扰）
 - **流式处理** — 逐帧处理，不一次性加载全部帧到内存
-- **模块化设计** — 工厂模式 + 抽象基类，易于扩展新算法
+- **异步任务** — 支持同步/异步两种调用模式，长视频不阻塞 API
+- **路径安全** — 白名单目录校验，防止路径遍历攻击
+- **模块化设计** — 纯 dict 注册表工厂模式，扩展新算法无需修改工厂代码
 
 ## 环境要求
 
@@ -28,6 +30,18 @@ pip install -r requirements.txt
 cd video_keyframe_engine
 uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
+
+### 路径安全配置（生产环境推荐）
+
+通过环境变量限制可访问的目录（多目录用 `:` 分隔）：
+
+```bash
+export VKE_ALLOWED_VIDEO_DIRS="/data/videos:/mnt/media"
+export VKE_ALLOWED_OUTPUT_DIRS="/data/output"
+uvicorn app.main:app --host 0.0.0.0 --port 8000
+```
+
+不设置时默认不限制路径（开发模式）。
 
 服务启动后访问 API 文档：http://localhost:8000/docs
 
@@ -114,15 +128,34 @@ curl -X POST http://localhost:8000/extract-frames \
 }
 ```
 
+### 异步提取（推荐用于长视频）
+
+```bash
+# 提交异步任务
+curl -X POST http://localhost:8000/extract-frames/async \
+  -H "Content-Type: application/json" \
+  -d '{
+    "video_path": "/path/to/video.mp4",
+    "mode": "time",
+    "output_dir": "/path/to/output",
+    "time_interval_sec": 2
+  }'
+# 返回: {"task_id": "abc123...", "status": "pending", "message": "..."}
+
+# 查询任务状态
+curl http://localhost:8000/tasks/{task_id}
+# 返回: {"task_id": "abc123...", "status": "completed", "result": {...}, "error": null}
+```
+
 ## 输出目录结构
 
 ```
 output_dir/
 ├── metadata.json
 └── frames/
-    ├── frame_0001_0.00s.jpg
-    ├── frame_0002_1.03s.jpg
-    └── frame_0003_2.07s.jpg
+    ├── frame_0001_t000000ms.jpg
+    ├── frame_0002_t001033ms.jpg
+    └── frame_0003_t002067ms.jpg
 ```
 
 ## 项目结构
@@ -153,7 +186,14 @@ video_keyframe_engine/
 
 1. 在 `app/extractor/` 下创建新文件，继承 `BaseExtractor`
 2. 实现 `extract` 生成器方法
-3. 在 `ExtractorFactory` 中注册，或使用 `ExtractorFactory.register()` 动态注册
+3. 调用 `ExtractorFactory.register("your_key", YourExtractor)` 注册（无需修改工厂代码）
+
+```python
+from app.extractor.base import ExtractorFactory
+from app.extractor.your_extractor import YourExtractor
+
+ExtractorFactory.register("semantic", YourExtractor)
+```
 
 ### 预留扩展点
 

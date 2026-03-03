@@ -21,6 +21,10 @@ class OpticalFlowExtractor(BaseExtractor):
     使用 cv2.calcOpticalFlowFarneback 计算密集光流场，
     通过光流向量的平均幅值衡量运动强度。
 
+    性能策略：
+        光流计算前将帧统一缩放到 _COMPUTE_HEIGHT（360p），
+        仅用缩放帧做运动判断，保存时输出原始分辨率帧。
+
     Attributes:
         config: 算法配置（threshold, min_interval_sec）
     """
@@ -35,6 +39,9 @@ class OpticalFlowExtractor(BaseExtractor):
         "poly_sigma": 1.2,
         "flags": 0,
     }
+
+    # 光流计算使用的统一高度（360p），平衡精度与性能
+    _COMPUTE_HEIGHT: int = 360
 
     def __init__(self, config: AlgorithmConfig, use_gpu: bool = False) -> None:
         super().__init__(use_gpu=use_gpu)
@@ -75,7 +82,9 @@ class OpticalFlowExtractor(BaseExtractor):
         3. 运动强度超过阈值且满足最小间隔 → 输出关键帧
         4. 第一帧始终作为关键帧
 
-        对于 1080p 视频，会先缩放到 540p 进行光流计算以提升性能。
+        性能策略：
+            所有帧统一缩放到 360p 高度计算光流（1080p → 360p 减少 9 倍像素量），
+            判定为关键帧后输出原始分辨率帧。
 
         Args:
             video_path: 视频文件路径
@@ -97,12 +106,14 @@ class OpticalFlowExtractor(BaseExtractor):
                 if not ret:
                     break
 
-                # 性能优化：对大尺寸帧缩放后再计算光流
+                # 统一缩放到 _COMPUTE_HEIGHT 进行光流计算
                 h, w = frame.shape[:2]
-                scale_factor = 1.0
-                if h > 720:
-                    scale_factor = 540.0 / h
-                    small_frame = cv2.resize(frame, None, fx=scale_factor, fy=scale_factor)
+                if h > self._COMPUTE_HEIGHT:
+                    scale = self._COMPUTE_HEIGHT / h
+                    small_frame = cv2.resize(
+                        frame, (int(w * scale), self._COMPUTE_HEIGHT),
+                        interpolation=cv2.INTER_AREA,
+                    )
                 else:
                     small_frame = frame
 

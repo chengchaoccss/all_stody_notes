@@ -2,11 +2,11 @@
 关键帧提取器基类模块。
 
 所有提取算法必须继承 BaseExtractor 并实现 extract 方法。
-支持工厂模式创建具体提取器实例。
+使用纯 dict 注册表 + 工厂模式创建提取器，扩展新算法无需修改工厂代码。
 """
 
 from abc import ABC, abstractmethod
-from typing import Optional
+from typing import Callable, Generator, Optional
 
 import numpy as np
 
@@ -46,7 +46,7 @@ class BaseExtractor(ABC):
         self.use_gpu = use_gpu
 
     @abstractmethod
-    def extract(self, video_path: str, **kwargs) -> "Generator[ExtractedFrame, None, None]":
+    def extract(self, video_path: str, **kwargs) -> Generator[ExtractedFrame, None, None]:
         """
         流式提取关键帧。
 
@@ -60,20 +60,56 @@ class BaseExtractor(ABC):
         ...
 
 
+# 算法提取器构造函数签名
+AlgorithmExtractorBuilder = Callable[[AlgorithmConfig, bool], BaseExtractor]
+
+
 class ExtractorFactory:
     """
     提取器工厂。
 
-    根据模式和算法类型创建对应的提取器实例。
-    支持注册自定义提取器以实现扩展（如 AI 语义关键帧）。
+    使用纯 dict 注册表管理所有算法提取器。
+    扩展新算法只需调用 register() 注册，无需修改工厂类本身。
+
+    内置算法在首次使用时通过 _ensure_defaults_registered() 延迟注册，
+    避免循环导入。
     """
 
-    _registry: dict[str, type[BaseExtractor]] = {}
+    _registry: dict[str, AlgorithmExtractorBuilder] = {}
+    _defaults_registered: bool = False
 
     @classmethod
-    def register(cls, key: str, extractor_cls: type[BaseExtractor]) -> None:
-        """注册自定义提取器。"""
-        cls._registry[key] = extractor_cls
+    def _ensure_defaults_registered(cls) -> None:
+        """延迟注册内置算法提取器（避免循环导入）。"""
+        if cls._defaults_registered:
+            return
+        cls._defaults_registered = True
+
+        from app.extractor.frame_diff_extractor import FrameDiffExtractor
+        from app.extractor.optical_flow_extractor import OpticalFlowExtractor
+        from app.extractor.scene_detect_extractor import SceneDetectExtractor
+
+        defaults: dict[str, type[BaseExtractor]] = {
+            AlgorithmType.FRAME_DIFF.value: FrameDiffExtractor,
+            AlgorithmType.OPTICAL_FLOW.value: OpticalFlowExtractor,
+            AlgorithmType.SCENE_DETECT.value: SceneDetectExtractor,
+        }
+        for key, extractor_cls in defaults.items():
+            cls._registry.setdefault(key, extractor_cls)
+
+    @classmethod
+    def register(cls, key: str, builder: AlgorithmExtractorBuilder) -> None:
+        """
+        注册自定义算法提取器。
+
+        后续扩展 AI 语义帧等新算法时，只需：
+            ExtractorFactory.register("semantic", SemanticExtractor)
+
+        Args:
+            key: 算法标识（与 AlgorithmType 值对应）
+            builder: 提取器构造函数，签名为 (config, use_gpu) -> BaseExtractor
+        """
+        cls._registry[key] = builder
 
     @classmethod
     def create(
@@ -109,24 +145,15 @@ class ExtractorFactory:
                 raise ValueError("algorithm 模式下必须指定 algorithm_type")
 
             config = algorithm_config or AlgorithmConfig()
+            cls._ensure_defaults_registered()
 
-            # 优先从注册表查找（支持扩展）
             registry_key = algorithm_type.value
-            if registry_key in cls._registry:
-                return cls._registry[registry_key](config=config, use_gpu=use_gpu)
-
-            if algorithm_type == AlgorithmType.FRAME_DIFF:
-                from app.extractor.frame_diff_extractor import FrameDiffExtractor
-                return FrameDiffExtractor(config=config, use_gpu=use_gpu)
-
-            if algorithm_type == AlgorithmType.OPTICAL_FLOW:
-                from app.extractor.optical_flow_extractor import OpticalFlowExtractor
-                return OpticalFlowExtractor(config=config, use_gpu=use_gpu)
-
-            if algorithm_type == AlgorithmType.SCENE_DETECT:
-                from app.extractor.scene_detect_extractor import SceneDetectExtractor
-                return SceneDetectExtractor(config=config, use_gpu=use_gpu)
-
-            raise ValueError(f"不支持的算法类型: {algorithm_type}")
+            builder = cls._registry.get(registry_key)
+            if builder is None:
+                raise ValueError(
+                    f"不支持的算法类型: {algorithm_type}，"
+                    f"已注册: {list(cls._registry.keys())}"
+                )
+            return builder(config, use_gpu)
 
         raise ValueError(f"不支持的提取模式: {mode}")

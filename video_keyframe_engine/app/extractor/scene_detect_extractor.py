@@ -1,7 +1,8 @@
 """
 场景检测关键帧提取器。
 
-使用 HSV 颜色直方图 + Bhattacharyya 距离检测场景变化。
+使用 HSV 颜色空间的 H+S 通道直方图 + Bhattacharyya 距离检测场景变化。
+去掉 V（亮度）通道以降低对光照变化的敏感度，减少误报。
 当相邻帧的直方图距离超过阈值时判定为场景切换，输出关键帧。
 """
 
@@ -18,14 +19,21 @@ class SceneDetectExtractor(BaseExtractor):
     """
     场景检测提取器。
 
-    基于 HSV 颜色直方图的 Bhattacharyya 距离判断场景切换。
+    基于 HSV 颜色空间中 H（色相）+ S（饱和度）通道直方图的
+    Bhattacharyya 距离判断场景切换。
+
+    去掉 V（亮度/明度）通道的原因：
+    V 通道对光照变化极其敏感，同一场景下仅因曝光、日照变化就会产生
+    大幅 V 值波动，导致大量误报。仅用 H+S 通道可聚焦于真正的颜色
+    分布变化，大幅提高场景切换检测的准确性。
+
     Bhattacharyya 距离越大表示两帧差异越大（0 = 完全相同，1 = 完全不同）。
 
     Attributes:
         config: 算法配置（threshold, min_interval_sec）
     """
 
-    # 直方图计算参数：H 通道 50 bins，S 通道 60 bins
+    # 直方图仅使用 H+S 通道（索引 0 和 1），不含 V 通道（索引 2）
     _HIST_CHANNELS: list[int] = [0, 1]
     _HIST_BINS: list[int] = [50, 60]
     _HIST_RANGES: list[float] = [0, 180, 0, 256]
