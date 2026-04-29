@@ -1,0 +1,8 @@
+{
+  "assertions": [
+    {"id": "no_flash",  "text": "视频中没有闪屏现象"},
+    {"id": "no_black",  "text": "视频中没有黑屏"},
+    {"id": "has_house", "text": "画面里有房子"},
+    {"id": "panda_eat", "text": "熊猫在动态吃竹子"}
+  ]
+}
