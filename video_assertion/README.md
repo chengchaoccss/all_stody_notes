@@ -69,7 +69,58 @@ Required:
 
 The client talks to `POST {base_url}/responses` (Volcengine's Responses API).
 
-## Run
+## Run as a service (recommended)
+
+```bash
+./start.sh                 # macOS / Linux
+start.bat                  # Windows
+```
+
+Once started, open:
+
+| URL | What it is |
+|---|---|
+| http://localhost:8000/ | Web frontend (upload video, paste assertions, view report) |
+| http://localhost:8000/docs | **Swagger UI** — interactive API explorer |
+| http://localhost:8000/redoc | ReDoc (alternative API docs) |
+| http://localhost:8000/openapi.json | Raw OpenAPI 3.1 spec |
+| http://localhost:8000/api/v1/health | Liveness probe |
+
+Override host / port:
+
+```bash
+VA_HOST=0.0.0.0 VA_PORT=9000 ./start.sh
+```
+
+### API endpoints
+
+| Method | Path | Purpose |
+|---|---|---|
+| POST | `/api/v1/jobs` | Submit a video + assertions (multipart) |
+| GET | `/api/v1/jobs` | List all jobs |
+| GET | `/api/v1/jobs/{job_id}` | Job state + structured report |
+| GET | `/api/v1/jobs/{job_id}/report.html` | Rendered HTML report |
+| GET | `/api/v1/jobs/{job_id}/report.json` | Structured JSON report |
+| GET | `/api/v1/jobs/{job_id}/evidence/{path}` | A single evidence image |
+| GET | `/api/v1/health` | Liveness probe |
+
+### Curl example (external user)
+
+```bash
+# 1. submit
+curl -X POST http://localhost:8000/api/v1/jobs \
+  -F "file=@/path/to/your_video.mp4" \
+  -F 'assertions=["视频中没有闪屏现象","画面里有房子","熊猫在动态吃竹子"]'
+# → {"job_id":"3f1c8e9a4b2d","status":"queued"}
+
+# 2. poll until status is "completed"
+curl http://localhost:8000/api/v1/jobs/3f1c8e9a4b2d
+
+# 3. open report
+xdg-open http://localhost:8000/api/v1/jobs/3f1c8e9a4b2d/report.html
+```
+
+## Run as a CLI
 
 ```bash
 python cli.py \
@@ -115,26 +166,34 @@ pip install -e ".[dev]"
 pytest
 ```
 
-26 tests covering CV rules, scene detection, keyframe dedup, the Doubao
+36 tests covering CV rules, scene detection, keyframe dedup, the Doubao
 HTTP wire format (mocked transport), the assertion router, the LLM judges,
-and end-to-end pipeline behaviour.
+end-to-end pipeline behaviour, **and the FastAPI server** (10 integration
+tests via `TestClient` covering submit / poll / report download / OpenAPI
+metadata / static frontend / path-traversal).
 
 ## Project layout
 
 ```
 src/video_assertion/
-  scene_detect.py     # PySceneDetect wrapper
-  frame_extract.py    # keyframe sampling + pHash dedup
-  clip_extract.py     # short-clip → N sampled frames
-  cv_rules.py         # flashing / black screen / freeze
-  doubao_client.py    # Volcengine Ark Responses API client
-  assertion_router.py # text → cv_rule / static / dynamic
-  llm_judge.py        # Doubao-based static + dynamic judges
-  pipeline.py         # orchestrator
-  report.py           # JSON + HTML rendering
-tests/                # full unit + integration coverage
-examples/run_demo.py  # offline demo with stubbed Doubao
-cli.py                # CLI entry point
+  scene_detect.py        # PySceneDetect wrapper
+  frame_extract.py       # keyframe sampling + pHash dedup
+  clip_extract.py        # short-clip → N sampled frames
+  cv_rules.py            # flashing / black screen / freeze
+  doubao_client.py       # Volcengine Ark Responses API client
+  assertion_router.py    # text → cv_rule / static / dynamic
+  llm_judge.py           # Doubao-based static + dynamic judges
+  pipeline.py            # orchestrator
+  report.py              # JSON + HTML rendering
+  server/
+    api.py               # FastAPI app (Swagger /docs, ReDoc /redoc)
+    jobs.py              # in-memory job store + thread-pool worker
+    schemas.py           # request/response Pydantic models
+    static/              # single-page frontend (HTML / CSS / JS)
+tests/                   # 36 tests
+examples/run_demo.py     # offline demo with stubbed Doubao
+cli.py                   # CLI entry point
+start.sh / start.bat     # one-click launchers
 ```
 
 ## Tuning

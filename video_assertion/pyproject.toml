@@ -17,13 +17,22 @@ dependencies = [
   "pydantic>=2.6",
   "Jinja2>=3.1",
   "python-dotenv>=1.0",
+  "fastapi>=0.110",
+  "uvicorn[standard]>=0.27",
+  "python-multipart>=0.0.9",
 ]
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "pytest-mock>=3.12"]
 
+[project.scripts]
+video-assertion-server = "video_assertion.server.api:run"
+
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+"video_assertion.server" = ["static/*"]
 
 [tool.pytest.ini_options]
 addopts = "-q"

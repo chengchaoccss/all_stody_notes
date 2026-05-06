@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>视频断言服务</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+<header>
+  <h1>视频断言服务</h1>
+  <nav>
+    <a href="/docs" target="_blank">Swagger</a>
+    <a href="/redoc" target="_blank">ReDoc</a>
+    <a href="/api/v1/health" target="_blank">Health</a>
+  </nav>
+</header>
+
+<main>
+  <section class="card">
+    <h2>1. 提交视频与断言</h2>
+    <form id="submitForm">
+      <label>视频文件
+        <input type="file" id="videoFile" accept="video/*" required />
+      </label>
+
+      <label>断言列表（JSON）
+        <textarea id="assertions" rows="8" required>[
+  "视频中没有闪屏现象",
+  "视频中没有黑屏",
+  "画面里有房子",
+  "熊猫在动态吃竹子"
+]</textarea>
+      </label>
+
+      <button type="submit" id="submitBtn">提交</button>
+    </form>
+  </section>
+
+  <section class="card" id="statusCard" hidden>
+    <h2>2. 任务状态</h2>
+    <div id="statusLine" class="status">—</div>
+    <div id="resultsTable"></div>
+  </section>
+
+  <section class="card" id="reportCard" hidden>
+    <h2>3. 完整报告</h2>
+    <p><a id="reportLink" target="_blank">在新窗口打开</a></p>
+    <iframe id="reportFrame" title="report"></iframe>
+  </section>
+</main>
+
+<footer>
+  Video Assertion · powered by Volcengine Doubao
+</footer>
+
+<script src="/app.js"></script>
+</body>
+</html>
