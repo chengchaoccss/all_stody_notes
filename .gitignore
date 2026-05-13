@@ -1,0 +1,24 @@
+# env
+.env
+.env.local
+
+# python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# node
+node_modules/
+dist/
+.vite/
+
+# storage
+storage/uploads/
+storage/audio/
+storage/subtitles/
+storage/notes/
+
+# IDE
+.idea/
+.vscode/
